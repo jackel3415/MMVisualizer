@@ -91,6 +91,10 @@ label.ctl-label { font-size:12px; color:var(--text-dim); display:flex; align-ite
   border-right: 1px solid var(--panel-border);
   display: flex; flex-direction: column;
   overflow: hidden; flex-shrink: 0;
+  transition: width .2s ease, min-width .2s ease, border-width .2s ease;
+}
+#sidebar.collapsed {
+  width: 0; min-width: 0; border-right-width: 0;
 }
 
 #sidebar-tabs { display:flex; border-bottom:1px solid var(--panel-border); }
@@ -320,6 +324,7 @@ label.ctl-label { font-size:12px; color:var(--text-dim); display:flex; align-ite
 <!-- Toolbar -->
 <div id="topbar">
   <h1>MagicMirror <span>Visualizer</span></h1>
+  <button class="btn" id="sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">☰</button>
   <div class="sep"></div>
   <button class="btn primary" onclick="document.getElementById('fi').click()">Load config.js</button>
   <input type="file" id="fi" accept=".js,.json" style="display:none">
@@ -994,6 +999,15 @@ function applyRes() {
   m.style.transform = `scale(${z})`;
   // adjust wrap min-height so scrollbar appears correctly
   document.getElementById('preview-wrap').style.minHeight = (h * z + 40) + 'px';
+}
+
+// ══════════════════════════════════════════════════════════
+// Sidebar toggle
+// ══════════════════════════════════════════════════════════
+function toggleSidebar() {
+  const sb = document.getElementById('sidebar');
+  sb.classList.toggle('collapsed');
+  document.getElementById('sidebar-toggle').textContent = sb.classList.contains('collapsed') ? '▶' : '☰';
 }
 
 // ══════════════════════════════════════════════════════════
