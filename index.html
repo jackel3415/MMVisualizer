@@ -313,6 +313,38 @@ label.ctl-label { font-size:12px; color:var(--text-dim); display:flex; align-ite
 #empty h2  { font-size:16px; font-weight:400; opacity:.4; }
 #empty p   { font-size:12px; opacity:.3; text-align:center; max-width:240px; }
 
+/* ── MMM-CalendarExt3 week grid ─────────────────────── */
+.mm-calext3 { width: 100%; font-size: .8em; }
+.calext3-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin-bottom: 4px; }
+.calext3-day-hdr {
+  text-align: center; padding: 3px 2px 2px;
+  font-size: .75em; text-transform: uppercase; letter-spacing: .07em;
+  color: rgba(255,255,255,.35); border-bottom: 1px solid rgba(255,255,255,.07);
+}
+.calext3-day-hdr.weekend { color: rgba(255,255,255,.2); }
+.calext3-day-hdr.today-hdr { color: var(--accent); }
+.calext3-cell { min-height: 38px; padding: 2px 3px; vertical-align: top; }
+.calext3-date {
+  font-size: .8em; color: rgba(255,255,255,.3);
+  margin-bottom: 3px; text-align: right; padding-right: 2px;
+}
+.calext3-date.is-today {
+  color: var(--accent); font-weight: 700;
+  background: rgba(79,195,247,.15); border-radius: 3px; padding: 0 3px;
+}
+.calext3-date.is-weekend { color: rgba(255,255,255,.18); }
+.calext3-event {
+  font-size: .78em; padding: 1px 4px; border-radius: 2px;
+  color: #fff; margin-bottom: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 100%;
+}
+.calext3-week-sep { border-top: 1px solid rgba(255,255,255,.06); margin: 4px 0 6px; }
+.calext3-legend { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+.calext3-legend-item { display: flex; align-items: center; gap: 4px; font-size: .72em; color: rgba(255,255,255,.4); }
+.calext3-legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.calext3-note { font-size: .75em; color: rgba(255,255,255,.25); font-style: italic; margin-top: 3px; }
+
 /* ── Scrollbar ───────────────────────────────────────── */
 ::-webkit-scrollbar { width:5px; height:5px; }
 ::-webkit-scrollbar-track { background:transparent; }
@@ -612,6 +644,7 @@ function buildContent(mod, idx) {
     case 'newsfeed':        return buildNewsfeed(mod);
     case 'updatenotification': return buildUpdateNotif(mod);
     case 'calendar':        return buildCalendar(mod);
+    case 'MMM-CalendarExt3': return buildCalendarExt3(mod);
     case 'alert':           return buildAlert();
     default:                return buildPlaceholder(mod);
   }
@@ -1001,6 +1034,165 @@ function fmtEventDate(d, allDay) {
 
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function buildCalendarExt3(mod) {
+  const c = mod.config || {};
+  const firstDay    = c.firstDayOfWeek ?? 0;
+  const weeksInView = c.weeksInView ?? 2;
+  const calendars   = c.calendars || [];
+  const weekends    = c.weekends ?? [0, 6];
+
+  const div = document.createElement('div');
+  div.className = 'mm-calext3';
+  div.innerHTML = '<div class="weather-loading">Loading calendars…</div>';
+
+  // Separate real URLs from placeholders
+  const fetchable = calendars.filter(cal => {
+    const u = cal.url || '';
+    return (u.startsWith('http') || u.startsWith('webcal')) &&
+           !u.startsWith('https://calendar.google.com/calendar/embed'); // embed ≠ ical
+  });
+  const skipped = calendars.length - fetchable.length;
+
+  fetchCalExt3Events(fetchable).then(events => {
+    div.innerHTML = '';
+    renderWeekGrid(div, events, calendars, firstDay, weeksInView, weekends);
+    if (skipped > 0) {
+      const note = document.createElement('div');
+      note.className = 'calext3-note';
+      note.textContent = `${skipped} calendar${skipped>1?'s':''} skipped (placeholder URL or Google embed — needs ical export link)`;
+      div.appendChild(note);
+    }
+  }).catch(err => {
+    div.innerHTML = '';
+    renderWeekGrid(div, [], calendars, firstDay, weeksInView, weekends);
+    const note = document.createElement('div');
+    note.className = 'calext3-note';
+    note.textContent = 'Could not fetch calendar data';
+    div.appendChild(note);
+  });
+
+  return div;
+}
+
+function renderWeekGrid(container, events, calendars, firstDay, weeksInView, weekends) {
+  const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const now = new Date();
+  const todayStr = dateKey(now);
+
+  // Build calendar color map
+  const calColors = {};
+  calendars.forEach(cal => { calColors[cal.url] = cal.color || '#4fc3f7'; });
+
+  // Build event lookup: dateKey → [events]
+  const eventMap = {};
+  events.forEach(e => {
+    const k = dateKey(e.start);
+    if (!eventMap[k]) eventMap[k] = [];
+    eventMap[k].push(e);
+  });
+
+  // Start from the Sunday (or Monday) of the current week
+  const weekStart = new Date(now);
+  const currentDay = weekStart.getDay();
+  const offset = (currentDay - firstDay + 7) % 7;
+  weekStart.setDate(weekStart.getDate() - offset);
+  weekStart.setHours(0,0,0,0);
+
+  for (let w = 0; w < weeksInView; w++) {
+    if (w > 0) {
+      const sep = document.createElement('div');
+      sep.className = 'calext3-week-sep';
+      container.appendChild(sep);
+    }
+
+    // Header row (day names)
+    const hdrGrid = document.createElement('div');
+    hdrGrid.className = 'calext3-week';
+    for (let d = 0; d < 7; d++) {
+      const dayIdx = (firstDay + d) % 7;
+      const cell = document.createElement('div');
+      cell.className = 'calext3-day-hdr' +
+        (weekends.includes(dayIdx) ? ' weekend' : '');
+      const thisDate = new Date(weekStart);
+      thisDate.setDate(weekStart.getDate() + w * 7 + d);
+      if (dateKey(thisDate) === todayStr) cell.classList.add('today-hdr');
+      cell.textContent = DAY_NAMES[dayIdx];
+      hdrGrid.appendChild(cell);
+    }
+    container.appendChild(hdrGrid);
+
+    // Cell row (date numbers + events)
+    const cellGrid = document.createElement('div');
+    cellGrid.className = 'calext3-week';
+    for (let d = 0; d < 7; d++) {
+      const dayIdx = (firstDay + d) % 7;
+      const thisDate = new Date(weekStart);
+      thisDate.setDate(weekStart.getDate() + w * 7 + d);
+      const k = dateKey(thisDate);
+
+      const cell = document.createElement('div');
+      cell.className = 'calext3-cell';
+
+      const dateEl = document.createElement('div');
+      dateEl.className = 'calext3-date' +
+        (k === todayStr ? ' is-today' : '') +
+        (weekends.includes(dayIdx) ? ' is-weekend' : '');
+      dateEl.textContent = thisDate.getDate();
+      cell.appendChild(dateEl);
+
+      (eventMap[k] || []).slice(0, 3).forEach(ev => {
+        const pill = document.createElement('div');
+        pill.className = 'calext3-event';
+        pill.style.background = ev.color || '#4fc3f7';
+        pill.title = ev.title;
+        pill.textContent = ev.title;
+        cell.appendChild(pill);
+      });
+
+      cellGrid.appendChild(cell);
+    }
+    container.appendChild(cellGrid);
+  }
+
+  // Legend
+  const activeCals = calendars.filter(cal =>
+    (cal.url||'').startsWith('http') || (cal.url||'').startsWith('webcal')
+  );
+  if (activeCals.length) {
+    const legend = document.createElement('div');
+    legend.className = 'calext3-legend';
+    activeCals.forEach(cal => {
+      const item = document.createElement('div');
+      item.className = 'calext3-legend-item';
+      item.innerHTML = `<span class="calext3-legend-dot" style="background:${cal.color||'#4fc3f7'}"></span>${escHtml(cal.name||'')}`;
+      legend.appendChild(item);
+    });
+    container.appendChild(legend);
+  }
+}
+
+function dateKey(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+async function fetchCalExt3Events(feeds) {
+  const allEvents = [];
+  await Promise.all(feeds.map(async feed => {
+    let url = (feed.url || feed).replace(/^webcal:\/\//i, 'https://');
+    const color = feed.color || '#4fc3f7';
+    try {
+      const proxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+      const resp = await fetch(proxy, { signal: AbortSignal.timeout(8000) });
+      if (!resp.ok) return;
+      const text = await resp.text();
+      const events = parseIcal(text, new Date(Date.now() - 7 * 86400000)); // include past week
+      events.forEach(e => { e.color = color; });
+      allEvents.push(...events);
+    } catch(e) { /* skip */ }
+  }));
+  return allEvents;
 }
 
 function buildAlert() {
