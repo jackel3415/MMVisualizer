@@ -46,8 +46,8 @@ let visualConfig = {
   zoom:       0.55,         // Preview zoom level (0.35 – 1.0)
 
   // ── Calendar (MMM-CalendarExt3) ─────────────────────────────────────────────
-  calendarFontSize:   "18px",  // Base font size for the week grid
-  calendarCellHeight: "130px", // Min height of each day cell
+  calendarFontSize:   "20px",   // Base font size for the week grid
+  calendarCellHeight: "113px",  // Min height of each day cell
 
 };
 

@@ -1,0 +1,15 @@
+# Personal config with real API keys and private calendar URLs
+Config.js
+
+# Duplicate / scratch files
+Config (1).js
+VisualConfig (1).js
+
+# MagicMirror source bundle (large, not needed by end users)
+MagicMirror-master.zip
+MagicMirror-master/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
