@@ -1003,9 +1003,17 @@ function applyRes() {
   const m = document.getElementById('mirror');
   m.style.width  = w + 'px';
   m.style.height = h + 'px';
+  // Compensate for the fact that scale() doesn't shrink layout footprint.
+  // Pull in by half the difference on each side so it stays centered.
+  const shrunkW = w * z;
+  const shrunkH = h * z;
+  const mx = (shrunkW - w) / 2;
+  const my = (shrunkH - h) / 2;
   m.style.transform = `scale(${z})`;
-  // adjust wrap min-height so scrollbar appears correctly
-  document.getElementById('preview-wrap').style.minHeight = (h * z + 40) + 'px';
+  m.style.marginLeft   = mx + 'px';
+  m.style.marginRight  = mx + 'px';
+  m.style.marginTop    = my + 'px';
+  m.style.marginBottom = my + 'px';
 }
 
 // ══════════════════════════════════════════════════════════
