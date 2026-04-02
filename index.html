@@ -314,36 +314,36 @@ label.ctl-label { font-size:12px; color:var(--text-dim); display:flex; align-ite
 #empty p   { font-size:12px; opacity:.3; text-align:center; max-width:240px; }
 
 /* ── MMM-CalendarExt3 week grid ─────────────────────── */
-.mm-calext3 { width: 100%; font-size: .8em; }
-.calext3-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin-bottom: 4px; }
+.mm-calext3 { width: 100%; padding: 12px 24px 10px; font-size: 18px; }
+.calext3-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-bottom: 6px; }
 .calext3-day-hdr {
-  text-align: center; padding: 3px 2px 2px;
-  font-size: .75em; text-transform: uppercase; letter-spacing: .07em;
-  color: rgba(255,255,255,.35); border-bottom: 1px solid rgba(255,255,255,.07);
+  text-align: center; padding: 8px 4px 7px;
+  font-size: 1em; text-transform: uppercase; letter-spacing: .1em;
+  color: rgba(255,255,255,.4); border-bottom: 1px solid rgba(255,255,255,.1);
 }
 .calext3-day-hdr.weekend { color: rgba(255,255,255,.2); }
 .calext3-day-hdr.today-hdr { color: var(--accent); }
-.calext3-cell { min-height: 38px; padding: 2px 3px; vertical-align: top; }
+.calext3-cell { min-height: 130px; padding: 6px 8px; vertical-align: top; }
 .calext3-date {
-  font-size: .8em; color: rgba(255,255,255,.3);
-  margin-bottom: 3px; text-align: right; padding-right: 2px;
+  font-size: 1.1em; color: rgba(255,255,255,.3);
+  margin-bottom: 7px; text-align: right;
 }
 .calext3-date.is-today {
   color: var(--accent); font-weight: 700;
-  background: rgba(79,195,247,.15); border-radius: 3px; padding: 0 3px;
+  background: rgba(79,195,247,.15); border-radius: 4px; padding: 0 6px;
 }
 .calext3-date.is-weekend { color: rgba(255,255,255,.18); }
 .calext3-event {
-  font-size: .78em; padding: 1px 4px; border-radius: 2px;
-  color: #fff; margin-bottom: 2px;
+  font-size: .88em; padding: 3px 8px; border-radius: 3px;
+  color: #fff; margin-bottom: 4px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   max-width: 100%;
 }
-.calext3-week-sep { border-top: 1px solid rgba(255,255,255,.06); margin: 4px 0 6px; }
-.calext3-legend { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
-.calext3-legend-item { display: flex; align-items: center; gap: 4px; font-size: .72em; color: rgba(255,255,255,.4); }
-.calext3-legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.calext3-note { font-size: .75em; color: rgba(255,255,255,.25); font-style: italic; margin-top: 3px; }
+.calext3-week-sep { border-top: 1px solid rgba(255,255,255,.07); margin: 8px 0 10px; }
+.calext3-legend { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 8px; }
+.calext3-legend-item { display: flex; align-items: center; gap: 6px; font-size: .85em; color: rgba(255,255,255,.4); }
+.calext3-legend-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+.calext3-note { font-size: .78em; color: rgba(255,255,255,.2); font-style: italic; margin-top: 5px; }
 
 /* ── Scrollbar ───────────────────────────────────────── */
 ::-webkit-scrollbar { width:5px; height:5px; }
