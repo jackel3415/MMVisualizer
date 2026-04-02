@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MagicMirror Visualizer</title>
+<style>
+  :root {
+    --bg: #000;
+    --mirror-bg: #0a0a0a;
+    --module-bg: rgba(255,255,255,0.04);
+    --module-border: rgba(255,255,255,0.12);
+    --module-hover: rgba(255,255,255,0.08);
+    --text: #fff;
+    --text-dim: rgba(255,255,255,0.5);
+    --text-dimmer: rgba(255,255,255,0.3);
+    --accent: #4fc3f7;
+    --accent2: #81c784;
+    --warn: #ffb74d;
+    --disabled: rgba(255,255,255,0.15);
+    --panel-bg: #111;
+    --panel-border: #222;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0d0d0d;
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ─── Top Bar ─── */
+  #topbar {
+    background: var(--panel-bg);
+    border-bottom: 1px solid var(--panel-border);
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  #topbar h1 {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    color: var(--accent);
+    white-space: nowrap;
+  }
+
+  #topbar h1 span { color: var(--text-dim); font-weight: 400; }
+
+  .tb-sep { width: 1px; height: 24px; background: var(--panel-border); }
+
+  .btn {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: var(--text);
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.15s, border-color 0.15s;
+    white-space: nowrap;
+  }
+  .btn:hover { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.3); }
+  .btn.primary { background: rgba(79,195,247,0.15); border-color: var(--accent); color: var(--accent); }
+  .btn.primary:hover { background: rgba(79,195,247,0.25); }
+
+  #status {
+    font-size: 12px;
+    color: var(--text-dim);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  #status.ok { color: var(--accent2); }
+  #status.err { color: #ef9a9a; }
+
+  .badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.08);
+    color: var(--text-dim);
+    white-space: nowrap;
+  }
+
+  /* ─── Layout ─── */
+  #app {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    gap: 0;
+  }
+
+  /* ─── Side Panel ─── */
+  #sidebar {
+    width: 280px;
+    min-width: 200px;
+    max-width: 380px;
+    background: var(--panel-bg);
+    border-right: 1px solid var(--panel-border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    resize: horizontal;
+  }
+
+  #sidebar-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--panel-border);
+  }
+
+  .stab {
+    flex: 1;
+    padding: 8px;
+    font-size: 12px;
+    text-align: center;
+    cursor: pointer;
+    color: var(--text-dim);
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s;
+  }
+  .stab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  #sidebar-content { flex: 1; overflow-y: auto; padding: 10px; }
+
+  /* Module list */
+  .mod-entry {
+    padding: 8px 10px;
+    border-radius: 6px;
+    margin-bottom: 4px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: background 0.12s, border-color 0.12s;
+    font-size: 12px;
+  }
+  .mod-entry:hover { background: var(--module-hover); border-color: var(--module-border); }
+  .mod-entry.selected { background: rgba(79,195,247,0.1); border-color: rgba(79,195,247,0.3); }
+  .mod-entry.disabled-mod { opacity: 0.45; }
+
+  .mod-name { font-weight: 600; font-size: 13px; color: var(--text); }
+  .mod-pos { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+  .mod-pos.no-pos { color: var(--warn); opacity: 0.7; }
+
+  /* Config paste area */
+  #paste-area {
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 11px;
+    resize: none;
+    outline: none;
+    line-height: 1.5;
+    padding: 4px;
+  }
+
+  /* ─── Mirror Preview ─── */
+  #preview-wrap {
+    flex: 1;
+    overflow: auto;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 24px;
+    background: #080808;
+  }
+
+  #mirror {
+    background: var(--mirror-bg);
+    border: 2px solid #1a1a1a;
+    border-radius: 4px;
+    box-shadow: 0 0 60px rgba(0,0,0,0.8), inset 0 0 30px rgba(0,0,0,0.5);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: width 0.3s, height 0.3s;
+    position: relative;
+  }
+
+  /* Scanline effect */
+  #mirror::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.03) 2px,
+      rgba(0,0,0,0.03) 4px
+    );
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  /* ─── MM Regions ─── */
+  .region-row {
+    display: flex;
+    width: 100%;
+    flex-shrink: 0;
+  }
+
+  .region {
+    padding: 6px;
+    min-height: 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    position: relative;
+    transition: background 0.15s;
+  }
+
+  .region.has-modules { min-height: 36px; }
+
+  .region-label {
+    font-size: 8px;
+    color: rgba(255,255,255,0.1);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    position: absolute;
+    top: 3px;
+    left: 6px;
+    pointer-events: none;
+  }
+
+  /* Full-width regions */
+  .region.top_bar,
+  .region.upper_third,
+  .region.middle_center,
+  .region.lower_third,
+  .region.bottom_bar {
+    width: 100%;
+    align-items: center;
+  }
+
+  /* Three-column regions */
+  .region.top_left,
+  .region.bottom_left { flex: 1; align-items: flex-start; }
+  .region.top_center,
+  .region.bottom_center { flex: 1; align-items: center; }
+  .region.top_right,
+  .region.bottom_right { flex: 1; align-items: flex-end; }
+
+  .region.fullscreen_above,
+  .region.fullscreen_below {
+    width: 100%;
+    align-items: center;
+    min-height: 0;
+  }
+
+  /* ─── Module Cards ─── */
+  .mm-module {
+    background: var(--module-bg);
+    border: 1px solid var(--module-border);
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+    max-width: 100%;
+    position: relative;
+    z-index: 1;
+  }
+
+  .mm-module:hover {
+    background: var(--module-hover);
+    border-color: rgba(255,255,255,0.25);
+    box-shadow: 0 0 12px rgba(79,195,247,0.15);
+  }
+
+  .mm-module.selected {
+    border-color: var(--accent);
+    background: rgba(79,195,247,0.08);
+    box-shadow: 0 0 16px rgba(79,195,247,0.2);
+  }
+
+  .mm-module.disabled-mod {
+    opacity: 0.35;
+    border-style: dashed;
+  }
+
+  .mm-module-header {
+    color: rgba(255,255,255,0.7);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 3px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    padding-bottom: 3px;
+  }
+
+  .mm-module-name {
+    font-weight: 700;
+    font-size: 12px;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .mm-module-name.custom { color: var(--accent); }
+
+  .mm-module-detail {
+    font-size: 9px;
+    color: var(--text-dimmer);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ─── Detail Panel ─── */
+  #detail-panel {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 320px;
+    background: #161616;
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    z-index: 200;
+    display: none;
+    flex-direction: column;
+    max-height: 420px;
+    overflow: hidden;
+  }
+
+  #detail-panel.visible { display: flex; }
+
+  #detail-header {
+    padding: 12px 14px 10px;
+    border-bottom: 1px solid var(--panel-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  #detail-title { font-size: 14px; font-weight: 600; }
+  #detail-close {
+    cursor: pointer;
+    color: var(--text-dim);
+    font-size: 18px;
+    line-height: 1;
+    padding: 0 2px;
+  }
+  #detail-close:hover { color: var(--text); }
+
+  #detail-body {
+    overflow-y: auto;
+    padding: 12px 14px;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  .detail-row { margin-bottom: 6px; }
+  .detail-key { color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .detail-val { color: var(--text); margin-top: 1px; word-break: break-all; }
+  .detail-val.mono { font-family: 'Consolas', monospace; font-size: 11px; background: rgba(255,255,255,0.04); padding: 6px 8px; border-radius: 4px; white-space: pre-wrap; }
+
+  /* ─── Drop Zone ─── */
+  #drop-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 999;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    color: var(--accent);
+    border: 4px dashed var(--accent);
+    pointer-events: none;
+  }
+  #drop-overlay.active { display: flex; }
+
+  /* ─── Empty State ─── */
+  #empty-state {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: var(--text-dim);
+    pointer-events: none;
+    z-index: 5;
+  }
+
+  #empty-state svg { opacity: 0.2; }
+  #empty-state h2 { font-size: 18px; font-weight: 500; opacity: 0.5; }
+  #empty-state p { font-size: 13px; opacity: 0.35; text-align: center; max-width: 260px; }
+
+  /* ─── Controls ─── */
+  #controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  select.ctl {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: var(--text);
+    padding: 5px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    outline: none;
+  }
+  select.ctl:hover { border-color: rgba(255,255,255,0.3); }
+
+  label.ctl-label {
+    font-size: 12px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+  }
+
+  /* ─── Scrollbar ─── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+  /* ─── Responsive ─── */
+  @media (max-width: 700px) {
+    #sidebar { display: none; }
+    #preview-wrap { padding: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Top Bar -->
+<div id="topbar">
+  <h1>MagicMirror <span>Visualizer</span></h1>
+  <div class="tb-sep"></div>
+  <div id="controls">
+    <button class="btn primary" onclick="document.getElementById('file-input').click()">Load config.js</button>
+    <input type="file" id="file-input" accept=".js,.json" style="display:none">
+    <select class="ctl" id="resolution-select" onchange="applyResolution()">
+      <option value="1920x1080">1920×1080 (Full HD)</option>
+      <option value="1280x720">1280×720 (HD)</option>
+      <option value="1080x1920">1080×1920 (Portrait)</option>
+      <option value="800x480">800×480 (RPi 7")</option>
+      <option value="1024x600">1024×600</option>
+    </select>
+    <select class="ctl" id="scale-select" onchange="applyScale()">
+      <option value="0.4">40%</option>
+      <option value="0.5" selected>50%</option>
+      <option value="0.6">60%</option>
+      <option value="0.75">75%</option>
+      <option value="1">100%</option>
+    </select>
+    <label class="ctl-label">
+      <input type="checkbox" id="show-disabled" onchange="render()" checked>
+      Show disabled
+    </label>
+  </div>
+  <div class="tb-sep"></div>
+  <span id="status">Drop a config.js file anywhere, or click "Load config.js"</span>
+  <span class="badge" id="mod-count" style="display:none"></span>
+</div>
+
+<!-- Main App -->
+<div id="app">
+
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <div id="sidebar-tabs">
+      <div class="stab active" onclick="showTab('modules')">Modules</div>
+      <div class="stab" onclick="showTab('paste')">Paste</div>
+      <div class="stab" onclick="showTab('raw')">Raw JSON</div>
+    </div>
+    <div id="sidebar-content">
+      <div id="tab-modules">
+        <div id="module-list" style="color:var(--text-dimmer);font-size:12px;padding:8px 4px">No config loaded.</div>
+      </div>
+      <div id="tab-paste" style="display:none; height: calc(100vh - 130px)">
+        <textarea id="paste-area" placeholder="Paste your config.js content here, then click Apply..." spellcheck="false"></textarea>
+        <button class="btn primary" style="width:100%;margin-top:6px" onclick="applyPaste()">Apply</button>
+      </div>
+      <div id="tab-raw" style="display:none">
+        <pre id="raw-json" style="font-size:10px;color:var(--text-dim);white-space:pre-wrap;word-break:break-all;line-height:1.5"></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mirror Preview -->
+  <div id="preview-wrap">
+    <div id="mirror" style="width:960px;height:540px;transform-origin:top left">
+
+      <div id="empty-state">
+        <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+          <rect x="8" y="4" width="48" height="56" rx="3" stroke="white" stroke-width="2"/>
+          <rect x="14" y="12" width="36" height="4" rx="1" fill="white"/>
+          <rect x="14" y="22" width="20" height="4" rx="1" fill="white"/>
+          <rect x="14" y="32" width="36" height="4" rx="1" fill="white"/>
+          <rect x="14" y="42" width="26" height="4" rx="1" fill="white"/>
+        </svg>
+        <h2>MagicMirror Preview</h2>
+        <p>Load or paste a config.js to preview your mirror layout</p>
+      </div>
+
+      <!-- Fullscreen Below -->
+      <div class="region fullscreen_below" id="region-fullscreen_below" style="min-height:0;display:none">
+        <div class="region-label">fullscreen_below</div>
+      </div>
+
+      <!-- Top Bar -->
+      <div class="region-row">
+        <div class="region top_bar" id="region-top_bar">
+          <div class="region-label">top_bar</div>
+        </div>
+      </div>
+
+      <!-- Top Row -->
+      <div class="region-row" style="flex:0 0 auto">
+        <div class="region top_left" id="region-top_left">
+          <div class="region-label">top_left</div>
+        </div>
+        <div class="region top_center" id="region-top_center">
+          <div class="region-label">top_center</div>
+        </div>
+        <div class="region top_right" id="region-top_right">
+          <div class="region-label">top_right</div>
+        </div>
+      </div>
+
+      <!-- Upper Third -->
+      <div class="region-row">
+        <div class="region upper_third" id="region-upper_third">
+          <div class="region-label">upper_third</div>
+        </div>
+      </div>
+
+      <!-- Middle (flex spacer) -->
+      <div style="flex:1;display:flex;flex-direction:column">
+        <div class="region-row" style="height:100%">
+          <div class="region middle_center" id="region-middle_center" style="width:100%;justify-content:center;flex:1">
+            <div class="region-label">middle_center</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Lower Third -->
+      <div class="region-row">
+        <div class="region lower_third" id="region-lower_third">
+          <div class="region-label">lower_third</div>
+        </div>
+      </div>
+
+      <!-- Bottom Row -->
+      <div class="region-row" style="flex:0 0 auto">
+        <div class="region bottom_left" id="region-bottom_left">
+          <div class="region-label">bottom_left</div>
+        </div>
+        <div class="region bottom_center" id="region-bottom_center">
+          <div class="region-label">bottom_center</div>
+        </div>
+        <div class="region bottom_right" id="region-bottom_right">
+          <div class="region-label">bottom_right</div>
+        </div>
+      </div>
+
+      <!-- Bottom Bar -->
+      <div class="region-row">
+        <div class="region bottom_bar" id="region-bottom_bar">
+          <div class="region-label">bottom_bar</div>
+        </div>
+      </div>
+
+      <!-- Fullscreen Above -->
+      <div class="region fullscreen_above" id="region-fullscreen_above" style="min-height:0;display:none">
+        <div class="region-label">fullscreen_above</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Module Detail Panel -->
+<div id="detail-panel">
+  <div id="detail-header">
+    <div id="detail-title">Module</div>
+    <div id="detail-close" onclick="closeDetail()">×</div>
+  </div>
+  <div id="detail-body"></div>
+</div>
+
+<!-- Drop Overlay -->
+<div id="drop-overlay">Drop config.js to load</div>
+
+<script>
+// ─── State ───────────────────────────────────────────────────────────────────
+let config = null;
+let selectedIdx = null;
+const KNOWN_MODULES = new Set([
+  'alert','calendar','clock','compliments','currentweather','weatherforecast',
+  'helloworld','newsfeed','updatenotification','weather','MMM-page-indicator',
+  'MMM-pages','MMM-Remote-Control','MMM-GoogleAssistant','MMM-Spotify'
+]);
+
+// ─── File Loading ─────────────────────────────────────────────────────────────
+document.getElementById('file-input').addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (f) readFile(f);
+  e.target.value = '';
+});
+
+document.addEventListener('dragover', e => {
+  e.preventDefault();
+  document.getElementById('drop-overlay').classList.add('active');
+});
+
+document.addEventListener('dragleave', e => {
+  if (!e.relatedTarget) document.getElementById('drop-overlay').classList.remove('active');
+});
+
+document.addEventListener('drop', e => {
+  e.preventDefault();
+  document.getElementById('drop-overlay').classList.remove('active');
+  const f = e.dataTransfer.files[0];
+  if (f) readFile(f);
+});
+
+function readFile(file) {
+  const reader = new FileReader();
+  reader.onload = ev => processConfigText(ev.target.result, file.name);
+  reader.readAsText(file);
+}
+
+function applyPaste() {
+  const text = document.getElementById('paste-area').value.trim();
+  if (text) processConfigText(text, 'pasted config');
+}
+
+// ─── Config Parsing ───────────────────────────────────────────────────────────
+function processConfigText(text, sourceName) {
+  try {
+    const parsed = parseMMConfig(text);
+    config = parsed;
+    setStatus(`Loaded: ${sourceName}`, 'ok');
+    document.getElementById('paste-area').value = text;
+    render();
+  } catch(err) {
+    setStatus(`Parse error: ${err.message}`, 'err');
+    console.error(err);
+  }
+}
+
+function parseMMConfig(text) {
+  // Strategy 1: Try sandboxed eval
+  try {
+    const sandboxed = text
+      .replace(/module\.exports\s*=\s*config\s*;?/g, '')
+      .replace(/if\s*\(typeof module[\s\S]*?\}\s*\)[\s\S]*?;/g, '')
+      .replace(/if\s*\(typeof module[\s\S]*?\{[\s\S]*?\}/g, '');
+
+    let result = null;
+    const fn = new Function('module', 'exports', 'require', '__dirname', '__filename',
+      sandboxed + '\nreturn typeof config !== "undefined" ? config : null;');
+    result = fn({exports:{}}, {}, ()=>({}), '', '');
+    if (result && result.modules) return result;
+  } catch(e) { /* fallback */ }
+
+  // Strategy 2: JSON-like extraction
+  const match = text.match(/var\s+config\s*=\s*(\{[\s\S]*?\});?\s*(?:\/\*|if\s*\(|$)/);
+  if (match) {
+    try {
+      // Convert JS object literal to JSON
+      let jsonStr = match[1]
+        .replace(/\/\/[^\n]*/g, '')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/,\s*([\}\]])/g, '$1')
+        .replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3')
+        .replace(/:\s*'([^']*)'/g, ': "$1"');
+      return JSON.parse(jsonStr);
+    } catch(e) { /* fallback */ }
+  }
+
+  // Strategy 3: Extract just modules array
+  const modMatch = text.match(/modules\s*:\s*\[([\s\S]*)\]/);
+  if (modMatch) {
+    try {
+      let modulesJson = '[' + modMatch[1]
+        .replace(/\/\/[^\n]*/g, '')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/,\s*([\}\]])/g, '$1')
+        .replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3')
+        .replace(/:\s*'([^']*)'/g, ': "$1"') + ']';
+      return { modules: JSON.parse(modulesJson) };
+    } catch(e) { /* fallback */ }
+  }
+
+  throw new Error('Could not parse config. Check the console for details.');
+}
+
+// ─── Rendering ────────────────────────────────────────────────────────────────
+const REGIONS = [
+  'top_bar','top_left','top_center','top_right',
+  'upper_third','middle_center','lower_third',
+  'bottom_left','bottom_center','bottom_right','bottom_bar',
+  'fullscreen_above','fullscreen_below'
+];
+
+function render() {
+  if (!config) return;
+
+  const showDisabled = document.getElementById('show-disabled').checked;
+  const modules = (config.modules || []).filter(m => showDisabled || !m.disabled);
+
+  // Hide empty state
+  document.getElementById('empty-state').style.display = 'none';
+
+  // Clear regions
+  REGIONS.forEach(r => {
+    const el = document.getElementById('region-' + r);
+    if (!el) return;
+    // Remove all module cards, keep region-label
+    [...el.children].forEach(c => {
+      if (!c.classList.contains('region-label')) c.remove();
+    });
+    el.classList.remove('has-modules');
+    if (r.startsWith('fullscreen')) el.style.display = 'none';
+  });
+
+  // Place modules
+  const noPosition = [];
+  modules.forEach((mod, i) => {
+    const pos = mod.position;
+    if (!pos) { noPosition.push({mod, i}); return; }
+    const regionEl = document.getElementById('region-' + pos);
+    if (!regionEl) return;
+
+    if (pos.startsWith('fullscreen')) regionEl.style.display = 'flex';
+    regionEl.classList.add('has-modules');
+    regionEl.appendChild(createModuleCard(mod, i));
+  });
+
+  // Update sidebar
+  renderModuleList(modules, noPosition);
+
+  // Update raw JSON
+  document.getElementById('raw-json').textContent = JSON.stringify(config, null, 2);
+
+  // Badge
+  const badge = document.getElementById('mod-count');
+  badge.style.display = 'inline';
+  badge.textContent = modules.length + ' modules';
+}
+
+function createModuleCard(mod, idx) {
+  const card = document.createElement('div');
+  card.className = 'mm-module' + (mod.disabled ? ' disabled-mod' : '') + (selectedIdx === idx ? ' selected' : '');
+  card.dataset.idx = idx;
+
+  const isCustom = !KNOWN_MODULES.has(mod.module);
+  const name = document.createElement('div');
+  name.className = 'mm-module-name' + (isCustom ? ' custom' : '');
+  name.textContent = mod.module || '(unnamed)';
+
+  card.appendChild(name);
+
+  if (mod.header) {
+    const hdr = document.createElement('div');
+    hdr.className = 'mm-module-header';
+    hdr.textContent = mod.header;
+    card.insertBefore(hdr, name);
+  }
+
+  // Show 1-2 key config values as hints
+  if (mod.config) {
+    const keys = Object.keys(mod.config).slice(0, 2);
+    if (keys.length) {
+      const detail = document.createElement('div');
+      detail.className = 'mm-module-detail';
+      detail.textContent = keys.map(k => `${k}: ${JSON.stringify(mod.config[k])}`).join(' · ');
+      card.appendChild(detail);
+    }
+  }
+
+  if (mod.disabled) {
+    const d = document.createElement('div');
+    d.className = 'mm-module-detail';
+    d.style.color = 'var(--warn)';
+    d.textContent = 'disabled';
+    card.appendChild(d);
+  }
+
+  card.addEventListener('click', () => selectModule(idx));
+  return card;
+}
+
+function renderModuleList(modules, noPosition) {
+  const list = document.getElementById('module-list');
+  list.innerHTML = '';
+
+  if (!modules.length) {
+    list.textContent = 'No modules found.';
+    list.style.color = 'var(--text-dimmer)';
+    return;
+  }
+
+  modules.forEach((mod, i) => {
+    const entry = document.createElement('div');
+    entry.className = 'mod-entry' + (mod.disabled ? ' disabled-mod' : '') + (selectedIdx === i ? ' selected' : '');
+    entry.innerHTML = `<div class="mod-name">${mod.module || '(unnamed)'}</div>
+      <div class="mod-pos ${mod.position ? '' : 'no-pos'}">${mod.position || 'no position (background)'}</div>`;
+    entry.addEventListener('click', () => selectModule(i));
+    list.appendChild(entry);
+  });
+}
+
+function selectModule(idx) {
+  selectedIdx = idx;
+  const modules = config?.modules || [];
+  const mod = modules[idx];
+  if (!mod) return;
+
+  // Highlight in mirror
+  document.querySelectorAll('.mm-module').forEach(el => {
+    el.classList.toggle('selected', parseInt(el.dataset.idx) === idx);
+  });
+  document.querySelectorAll('.mod-entry').forEach((el, i) => {
+    el.classList.toggle('selected', i === idx);
+  });
+
+  showDetail(mod);
+}
+
+// ─── Detail Panel ─────────────────────────────────────────────────────────────
+function showDetail(mod) {
+  const panel = document.getElementById('detail-panel');
+  const title = document.getElementById('detail-title');
+  const body = document.getElementById('detail-body');
+
+  title.textContent = mod.module || '(unnamed)';
+  body.innerHTML = '';
+
+  const fields = [
+    ['Position', mod.position || '<em style="opacity:.5">none (background module)</em>'],
+    ['Header', mod.header],
+    ['Disabled', mod.disabled ? '<span style="color:var(--warn)">Yes</span>' : undefined],
+    ['Classes', mod.classes],
+  ];
+
+  fields.forEach(([key, val]) => {
+    if (val === undefined || val === null) return;
+    const row = document.createElement('div');
+    row.className = 'detail-row';
+    row.innerHTML = `<div class="detail-key">${key}</div><div class="detail-val">${val}</div>`;
+    body.appendChild(row);
+  });
+
+  if (mod.config && Object.keys(mod.config).length) {
+    const row = document.createElement('div');
+    row.className = 'detail-row';
+    row.innerHTML = `<div class="detail-key">Config</div>
+      <div class="detail-val mono">${JSON.stringify(mod.config, null, 2)}</div>`;
+    body.appendChild(row);
+  }
+
+  panel.classList.add('visible');
+}
+
+function closeDetail() {
+  document.getElementById('detail-panel').classList.remove('visible');
+  selectedIdx = null;
+  document.querySelectorAll('.mm-module, .mod-entry').forEach(el => el.classList.remove('selected'));
+}
+
+// ─── Sidebar Tabs ─────────────────────────────────────────────────────────────
+function showTab(name) {
+  ['modules','paste','raw'].forEach(t => {
+    document.getElementById('tab-' + t).style.display = t === name ? '' : 'none';
+  });
+  document.querySelectorAll('.stab').forEach((el, i) => {
+    el.classList.toggle('active', ['modules','paste','raw'][i] === name);
+  });
+}
+
+// ─── Resolution / Scale ───────────────────────────────────────────────────────
+function applyResolution() {
+  const [w, h] = document.getElementById('resolution-select').value.split('x').map(Number);
+  const scale = parseFloat(document.getElementById('scale-select').value);
+  const mirror = document.getElementById('mirror');
+  mirror.style.width = w + 'px';
+  mirror.style.height = h + 'px';
+  mirror.style.transform = `scale(${scale})`;
+
+  const wrap = document.getElementById('preview-wrap');
+  wrap.style.minHeight = (h * scale + 48) + 'px';
+}
+
+function applyScale() {
+  applyResolution();
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function setStatus(msg, cls) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = cls || '';
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+applyResolution();
+
+// Load example config if nothing loaded (helpful demo)
+const EXAMPLE_CONFIG = `var config = {
+  address: "localhost",
+  port: 8080,
+  language: "en",
+  timeFormat: 24,
+  units: "metric",
+  modules: [
+    { module: "alert" },
+    { module: "updatenotification", position: "top_bar" },
+    { module: "clock", position: "top_left" },
+    { module: "calendar", header: "US Holidays", position: "top_left",
+      config: { calendars: [{ symbol: "calendar-check", url: "webcal://www.calendarlabs.com/ical-calendar/ics/76/US_Holidays.ics" }] }
+    },
+    { module: "compliments", position: "lower_third" },
+    { module: "currentweather", position: "top_right",
+      config: { location: "New York", locationID: "5128581", appid: "YOUR_KEY" }
+    },
+    { module: "weatherforecast", position: "top_right",
+      config: { location: "New York", locationID: "5128581", appid: "YOUR_KEY" }
+    },
+    { module: "newsfeed", position: "bottom_bar",
+      config: { feeds: [{ title: "BBC", url: "https://feeds.bbci.co.uk/news/rss.xml" }], showSourceTitle: true }
+    }
+  ]
+};`;
+
+processConfigText(EXAMPLE_CONFIG, 'example config (load your own above)');
+</script>
+</body>
+</html>
