@@ -396,6 +396,52 @@ label.ctl-label { font-size:12px; color:var(--text-dim); display:flex; align-ite
 .calext3-legend-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
 .calext3-note { font-size: .78em; color: rgba(255,255,255,.2); font-style: italic; margin-top: 5px; }
 
+/* ── Drag & drop ─────────────────────────────────────── */
+.mm-wrap[draggable="true"] { cursor: grab; }
+.mm-wrap[draggable="true"]:active { cursor: grabbing; }
+.mm-wrap.dragging { opacity: .3; }
+.drag-handle {
+  position:absolute; top:3px; right:4px; font-size:10px;
+  color:rgba(255,255,255,.18); cursor:grab; user-select:none; line-height:1;
+}
+.mm-wrap:hover .drag-handle { color:rgba(255,255,255,.5); }
+
+/* region drop targets */
+#mirror.drag-active .region {
+  outline: 1px dashed rgba(255,255,255,.07);
+  outline-offset: -1px;
+  transition: background .1s;
+}
+.region.drag-over {
+  background: rgba(79,195,247,.08) !important;
+  outline: 2px dashed rgba(79,195,247,.45) !important;
+  outline-offset: -2px;
+}
+
+/* ── Module browser ──────────────────────────────────── */
+#t-browse { display:none; flex-direction:column; height:calc(100vh - 105px); }
+.browse-search {
+  width:100%; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.14);
+  color:#fff; padding:6px 10px; border-radius:6px; font-size:12px; outline:none;
+  flex-shrink:0; margin-bottom:8px;
+}
+.browse-search::placeholder { color:rgba(255,255,255,.3); }
+.browse-search:focus { border-color:var(--accent); }
+.browse-note { font-size:10px; color:rgba(255,255,255,.25); font-style:italic; margin-bottom:8px; flex-shrink:0; line-height:1.4; }
+#browse-list { flex:1; overflow-y:auto; }
+.bitem {
+  padding:8px 10px; border-radius:5px; margin-bottom:4px;
+  border:1px solid rgba(255,255,255,.08); cursor:grab;
+  background:rgba(255,255,255,.03); transition:background .12s;
+  user-select:none;
+}
+.bitem:hover { background:rgba(255,255,255,.07); border-color:rgba(255,255,255,.2); }
+.bitem.dragging { opacity:.35; }
+.bitem-name { font-size:12px; font-weight:600; color:var(--accent); }
+.bitem-desc { font-size:10.5px; color:var(--text-dimmer); margin-top:2px; line-height:1.3; }
+.bitem-meta { font-size:10px; color:rgba(255,255,255,.25); margin-top:3px; }
+.browse-msg { font-size:12px; color:var(--text-dimmer); font-style:italic; padding:14px 4px; text-align:center; }
+
 /* ── Scrollbar ───────────────────────────────────────── */
 ::-webkit-scrollbar { width:5px; height:5px; }
 ::-webkit-scrollbar-track { background:transparent; }
@@ -448,6 +494,7 @@ label.ctl-label { font-size:12px; color:var(--text-dim); display:flex; align-ite
       <div class="stab active" onclick="showTab('modules')">Modules</div>
       <div class="stab" onclick="showTab('cfg')">Config.js</div>
       <div class="stab" onclick="showTab('vc')">VisualConfig</div>
+      <div class="stab" onclick="showTab('browse');initBrowse()">Browse</div>
       <div class="stab" onclick="showTab('raw')">JSON</div>
     </div>
     <div id="sidebar-body">
@@ -467,6 +514,12 @@ label.ctl-label { font-size:12px; color:var(--text-dim); display:flex; align-ite
           <button class="btn primary" style="flex:1" onclick="applyVCArea()">Apply</button>
           <button class="btn" style="flex:1" onclick="saveVisualConfigFile()" title="Write back to original file">💾 Save</button>
         </div>
+      </div>
+
+      <div id="t-browse">
+        <input class="browse-search" id="browse-search" placeholder="Search modules… (e.g. spotify, weather)" oninput="debounceBrowse()">
+        <div class="browse-note">Drag any module onto a region in the mirror to add it to Config.js. Powered by the MagicMirror module registry on GitHub.</div>
+        <div id="browse-list"><div class="browse-msg">Click Browse to load modules</div></div>
       </div>
 
       <div id="t-raw" style="display:none"><pre id="raw-json" style="font-size:10px;color:var(--text-dim);white-space:pre-wrap;word-break:break-all;line-height:1.5"></pre></div>
@@ -930,6 +983,8 @@ function render() {
   modules.forEach((mod, i) => {
     if (mod.module === 'weather') fetchWeather(mod, i);
   });
+
+  setupMirrorDrop();
 }
 
 // ══════════════════════════════════════════════════════════
@@ -939,7 +994,15 @@ function buildWrap(mod, idx) {
   const wrap = document.createElement('div');
   wrap.className = 'mm-wrap' + (mod.disabled ? ' dis' : '') + (selIdx === idx ? ' sel' : '');
   wrap.dataset.idx = idx;
+  wrap.style.position = 'relative';
   wrap.addEventListener('click', () => selectMod(idx));
+
+  // Drag handle
+  const handle = document.createElement('div');
+  handle.className = 'drag-handle';
+  handle.textContent = '⠿';
+  handle.title = 'Drag to move to another region';
+  wrap.appendChild(handle);
 
   if (mod.header) {
     const h = document.createElement('div');
@@ -949,6 +1012,7 @@ function buildWrap(mod, idx) {
   }
 
   wrap.appendChild(buildContent(mod, idx));
+  enableModuleDrag(wrap, idx);
   return wrap;
 }
 
@@ -1713,15 +1777,196 @@ function closeDetail() {
 // Tabs
 // ══════════════════════════════════════════════════════════
 function showTab(name) {
-  const tabs = ['modules','cfg','vc','raw'];
-  const flex = ['cfg','vc'];
+  const tabs = ['modules','cfg','vc','browse','raw'];
+  const flex = ['cfg','vc','browse'];
   tabs.forEach(t => {
     const el = document.getElementById('t-' + t);
-    el.style.display = t === name ? (flex.includes(t) ? 'flex' : '') : 'none';
+    if (el) el.style.display = t === name ? (flex.includes(t) ? 'flex' : '') : 'none';
   });
   document.querySelectorAll('.stab').forEach((el, i) => {
     el.classList.toggle('active', tabs[i] === name);
   });
+}
+
+// ══════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════
+// Drag & drop — move modules between regions
+// ══════════════════════════════════════════════════════════
+function enableModuleDrag(wrap, idx) {
+  wrap.draggable = true;
+  wrap.addEventListener('dragstart', e => {
+    e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'move', idx }));
+    e.dataTransfer.effectAllowed = 'move';
+    setTimeout(() => wrap.classList.add('dragging'), 0);
+    document.getElementById('mirror').classList.add('drag-active');
+  });
+  wrap.addEventListener('dragend', () => {
+    wrap.classList.remove('dragging');
+    document.getElementById('mirror').classList.remove('drag-active');
+  });
+}
+
+// Use event delegation on #mirror — avoids accumulating handlers across re-renders
+let mirrorDropReady = false;
+function setupMirrorDrop() {
+  if (mirrorDropReady) return;
+  mirrorDropReady = true;
+  const mirror = document.getElementById('mirror');
+
+  mirror.addEventListener('dragover', e => {
+    const region = e.target.closest('.region[id^="region-"]');
+    if (!region) return;
+    e.preventDefault();
+    document.querySelectorAll('.region.drag-over').forEach(r => r.classList.remove('drag-over'));
+    region.classList.add('drag-over');
+  });
+
+  mirror.addEventListener('dragleave', e => {
+    if (!mirror.contains(e.relatedTarget))
+      document.querySelectorAll('.region.drag-over').forEach(r => r.classList.remove('drag-over'));
+  });
+
+  mirror.addEventListener('drop', e => {
+    const region = e.target.closest('.region[id^="region-"]');
+    document.querySelectorAll('.region.drag-over').forEach(r => r.classList.remove('drag-over'));
+    mirror.classList.remove('drag-active');
+    if (!region) return;
+    e.preventDefault();
+
+    let data;
+    try { data = JSON.parse(e.dataTransfer.getData('text/plain')); } catch { return; }
+    const regionName = region.id.replace('region-', '');
+
+    if (!cfg) cfg = { modules: [] };
+
+    if (data.type === 'move') {
+      // Move existing module to new region
+      if (cfg.modules[data.idx]) {
+        cfg.modules[data.idx].position = regionName;
+        setStatus(`Moved "${cfg.modules[data.idx].module}" → ${regionName} (unsaved)`, '');
+      }
+    } else if (data.type === 'new') {
+      // Add new module from browser
+      cfg.modules.push({ module: data.name, position: regionName, config: {} });
+      setStatus(`Added "${data.name}" → ${regionName} — edit config in the detail panel`, 'ok');
+    }
+
+    updateConfigArea();
+    render();
+  });
+}
+
+// ══════════════════════════════════════════════════════════
+// Config serialization — write cfg object back to JS text
+// ══════════════════════════════════════════════════════════
+function serializeConfig(c) {
+  function fmtVal(v) {
+    if (typeof v === 'string') return `"${v.replace(/"/g, '\\"')}"`;
+    if (Array.isArray(v)) return JSON.stringify(v);
+    return JSON.stringify(v);
+  }
+  function fmtObj(obj, depth) {
+    const pad = '  '.repeat(depth);
+    const inner = Object.entries(obj).map(([k, v]) => {
+      const val = (v !== null && typeof v === 'object' && !Array.isArray(v))
+        ? fmtObj(v, depth + 1)
+        : fmtVal(v);
+      return `${pad}  ${k}: ${val}`;
+    }).join(',\n');
+    return `{\n${inner}\n${pad}}`;
+  }
+
+  const top = ['let config = {'];
+  ['address','port','basePath','language','locale','logLevel','timeFormat','units'].forEach(k => {
+    if (c[k] === undefined) return;
+    top.push(`  ${k}: ${fmtVal(c[k])},`);
+  });
+
+  top.push('', '  modules: [');
+  (c.modules || []).forEach((m, i) => {
+    const last = i === c.modules.length - 1;
+    const lines = ['    {', `      module: "${m.module}",`];
+    if (m.position)  lines.push(`      position: "${m.position}",`);
+    if (m.header)    lines.push(`      header: "${m.header}",`);
+    if (m.disabled)  lines.push(`      disabled: true,`);
+    if (m.classes)   lines.push(`      classes: "${m.classes}",`);
+    if (m.config && Object.keys(m.config).length) {
+      const cfg2 = fmtObj(m.config, 3).split('\n')
+        .map((l, i2) => i2 === 0 ? l : '      ' + l).join('\n');
+      lines.push(`      config: ${cfg2},`);
+    }
+    lines.push(`    }${last ? '' : ','}`);
+    top.push(lines.join('\n'));
+  });
+
+  top.push('  ],', '};', '',
+    '/*************** DO NOT EDIT THE LINE BELOW ***************/',
+    'if (typeof module !== "undefined") { module.exports = config; }');
+  return top.join('\n');
+}
+
+function updateConfigArea() {
+  if (!cfg) return;
+  document.getElementById('cfg-area').value = serializeConfig(cfg);
+}
+
+// ══════════════════════════════════════════════════════════
+// Module browser — GitHub module registry
+// ══════════════════════════════════════════════════════════
+let browseInited = false;
+let browseTimer = null;
+
+function initBrowse() {
+  if (browseInited) return;
+  browseInited = true;
+  loadBrowse('');
+}
+
+function debounceBrowse() {
+  clearTimeout(browseTimer);
+  browseTimer = setTimeout(() => loadBrowse(document.getElementById('browse-search').value.trim()), 500);
+}
+
+async function loadBrowse(query) {
+  const list = document.getElementById('browse-list');
+  list.innerHTML = '<div class="browse-msg">Loading…</div>';
+  try {
+    const q = ('topic:magicmirror-module ' + query).trim();
+    const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(q)}&sort=stars&per_page=40`;
+    const resp = await fetch(url, { headers: { Accept: 'application/vnd.github.v3+json' } });
+    if (!resp.ok) throw new Error('GitHub API ' + resp.status);
+    const { items = [] } = await resp.json();
+    list.innerHTML = '';
+    if (!items.length) { list.innerHTML = '<div class="browse-msg">No modules found.</div>'; return; }
+    items.forEach(item => list.appendChild(buildBrowseItem(item)));
+  } catch(e) {
+    list.innerHTML = `<div class="browse-msg">Failed: ${e.message}</div>`;
+  }
+}
+
+function buildBrowseItem(item) {
+  const div = document.createElement('div');
+  div.className = 'bitem';
+  div.draggable = true;
+  div.title = `Drag onto a mirror region to add ${item.name}`;
+  div.innerHTML = `
+    <div class="bitem-name">${escHtml(item.name)}</div>
+    <div class="bitem-desc">${escHtml(item.description || '(no description)')}</div>
+    <div class="bitem-meta">⭐ ${item.stargazers_count} · ${escHtml(item.owner.login)}</div>`;
+
+  div.addEventListener('dragstart', e => {
+    e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'new', name: item.name,
+      repo: item.full_name, description: item.description || '' }));
+    e.dataTransfer.effectAllowed = 'copy';
+    div.classList.add('dragging');
+    document.getElementById('mirror').classList.add('drag-active');
+    if (!cfg) cfg = { modules: [] };
+  });
+  div.addEventListener('dragend', () => {
+    div.classList.remove('dragging');
+    document.getElementById('mirror').classList.remove('drag-active');
+  });
+  return div;
 }
 
 // ══════════════════════════════════════════════════════════
