@@ -301,21 +301,50 @@ label.ctl-label { font-size:12px; color:var(--text-dim); display:flex; align-ite
 
 /* ── Detail panel ────────────────────────────────────── */
 #detail {
-  position:fixed; bottom:16px; right:16px; width:300px;
+  position:fixed; bottom:16px; right:16px; width:320px;
   background:#161616; border:1px solid var(--panel-border);
   border-radius:10px; box-shadow:0 8px 32px rgba(0,0,0,.7);
-  z-index:200; display:none; flex-direction:column; max-height:400px;
+  z-index:200; display:none; flex-direction:column; max-height:480px;
 }
 #detail.vis { display:flex; }
-#detail-hdr { padding:11px 13px 9px; border-bottom:1px solid var(--panel-border); display:flex; align-items:center; justify-content:space-between; }
-#detail-hdr span { font-size:13px; font-weight:600; }
-#detail-close { cursor:pointer; color:var(--text-dim); font-size:18px; line-height:1; padding:0 2px; }
+#detail-hdr {
+  padding:10px 13px 0; border-bottom:1px solid var(--panel-border);
+  display:flex; flex-direction:column; gap:0; flex-shrink:0;
+}
+#detail-hdr-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+#detail-title { font-size:13px; font-weight:600; }
+#detail-close { cursor:pointer; color:var(--text-dim); font-size:18px; line-height:1; }
 #detail-close:hover { color:#fff; }
-#detail-body { overflow-y:auto; padding:11px 13px; font-size:11.5px; line-height:1.6; }
+/* detail tabs */
+#detail-tabs { display:flex; gap:0; }
+.dtab {
+  padding:5px 12px; font-size:11px; cursor:pointer;
+  color:var(--text-dim); border-bottom:2px solid transparent;
+  transition:color .12s;
+}
+.dtab.active { color:var(--accent); border-bottom-color:var(--accent); }
+.dtab:hover { color:#fff; }
+/* tab panes */
+#detail-body { overflow-y:auto; flex:1; font-size:11.5px; line-height:1.6; }
+.dpane { display:none; padding:11px 13px; }
+.dpane.active { display:block; }
 .drow { margin-bottom:7px; }
 .dkey { color:var(--text-dim); font-size:10px; text-transform:uppercase; letter-spacing:.06em; }
 .dval { color:#fff; margin-top:1px; word-break:break-all; }
 .dval.mono { font-family:'Consolas',monospace; font-size:10px; background:rgba(255,255,255,.04); padding:5px 7px; border-radius:4px; white-space:pre-wrap; }
+/* visual fields */
+.vf-section { font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--accent); margin:10px 0 6px; opacity:.7; }
+.vf-section:first-child { margin-top:0; }
+.vf-row { display:flex; align-items:center; gap:6px; margin-bottom:6px; }
+.vf-label { font-size:10.5px; color:var(--text-dim); flex:1; white-space:nowrap; }
+.vf-input {
+  width:100px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.14);
+  color:#fff; padding:3px 6px; border-radius:4px; font-size:11px;
+  font-family:'Consolas',monospace; outline:none;
+}
+.vf-input:focus { border-color:var(--accent); }
+.vf-color { width:28px; height:24px; padding:1px 2px; border-radius:4px; cursor:pointer; flex-shrink:0; }
+.vf-no-vc { font-size:11px; color:var(--text-dimmer); font-style:italic; text-align:center; padding:16px 0; }
 
 /* ── Drop overlay ────────────────────────────────────── */
 #drop-overlay {
@@ -496,10 +525,19 @@ label.ctl-label { font-size:12px; color:var(--text-dim); display:flex; align-ite
 <!-- Detail panel -->
 <div id="detail">
   <div id="detail-hdr">
-    <span id="detail-title">Module</span>
-    <div id="detail-close" onclick="closeDetail()">×</div>
+    <div id="detail-hdr-top">
+      <span id="detail-title">Module</span>
+      <div id="detail-close" onclick="closeDetail()">×</div>
+    </div>
+    <div id="detail-tabs">
+      <div class="dtab active" onclick="showDetailTab('config')">Config</div>
+      <div class="dtab" onclick="showDetailTab('visual')">Visual</div>
+    </div>
   </div>
-  <div id="detail-body"></div>
+  <div id="detail-body">
+    <div class="dpane active" id="dpane-config"></div>
+    <div class="dpane" id="dpane-visual"></div>
+  </div>
 </div>
 
 <!-- Drop overlay -->
@@ -512,6 +550,52 @@ label.ctl-label { font-size:12px; color:var(--text-dim); display:flex; align-ite
 let cfg = null;
 let selIdx = null;
 let clockTimer = null;
+let currentVC = {};   // live copy of VisualConfig, updated on every apply
+
+// VisualConfig fields shown per module type in the Visual tab
+const VC_MODULE_FIELDS = {
+  clock: [
+    { key: 'fontSizeXLarge',  label: 'Time size',        hint: 'e.g. 3.75rem' },
+    { key: 'fontSizeSmall',   label: 'Date size',         hint: 'e.g. 1rem' },
+    { key: 'colorTextBright', label: 'Time color' },
+    { key: 'colorTextDimmed', label: 'Date color' },
+  ],
+  weather: [
+    { key: 'colorTextBright', label: 'Temp color' },
+    { key: 'colorText',       label: 'Text color' },
+    { key: 'colorTextDimmed', label: 'Dim color' },
+    { key: 'fontSizeMedium',  label: 'Medium font size',  hint: 'e.g. 1.5rem' },
+  ],
+  compliments: [
+    { key: 'colorText',       label: 'Text color' },
+    { key: 'fontSizeMedium',  label: 'Font size',          hint: 'e.g. 1.5rem' },
+  ],
+  newsfeed: [
+    { key: 'colorText',       label: 'Text color' },
+    { key: 'fontSizeSmall',   label: 'Font size',          hint: 'e.g. 1rem' },
+  ],
+  calendar: [
+    { key: 'colorText',       label: 'Text color' },
+    { key: 'fontSizeSmall',   label: 'Font size',          hint: 'e.g. 1rem' },
+  ],
+  'MMM-CalendarExt3': [
+    { key: 'calendarFontSize',   label: 'Grid font size',  hint: 'e.g. 18px' },
+    { key: 'calendarCellHeight', label: 'Cell height',     hint: 'e.g. 130px' },
+  ],
+};
+const VC_GLOBAL_FIELDS = [
+  { key: 'colorBackground',  label: 'Background' },
+  { key: 'colorText',        label: 'Text' },
+  { key: 'colorTextBright',  label: 'Bright text' },
+  { key: 'colorTextDimmed',  label: 'Dimmed text' },
+  { key: 'fontPrimary',      label: 'Primary font',   hint: 'e.g. Roboto Condensed' },
+  { key: 'fontSize',         label: 'Base font size', hint: 'e.g. 20px' },
+  { key: 'gapBodyTop',       label: 'Margin top',     hint: 'e.g. 60px' },
+  { key: 'gapBodyRight',     label: 'Margin right',   hint: 'e.g. 60px' },
+  { key: 'gapBodyBottom',    label: 'Margin bottom',  hint: 'e.g. 60px' },
+  { key: 'gapBodyLeft',      label: 'Margin left',    hint: 'e.g. 60px' },
+  { key: 'gapModules',       label: 'Module spacing', hint: 'e.g. 30px' },
+];
 // cache: key = "module:location:type:units:apiKey" → data
 const weatherCache = {};
 
@@ -679,6 +763,7 @@ function parseVisualConfig(text) {
 }
 
 function applyVisualConfig(vc) {
+  currentVC = Object.assign(currentVC, vc);
   const mirror = document.getElementById('mirror');
 
   // Map VisualConfig properties → MagicMirror CSS variables on the mirror element
@@ -1474,29 +1559,148 @@ function selectMod(idx) {
 }
 
 function showDetail(mod) {
-  const panel = document.getElementById('detail');
   document.getElementById('detail-title').textContent = mod.module || '(unnamed)';
-  const body = document.getElementById('detail-body');
-  body.innerHTML = '';
+
+  // Config tab
+  const configPane = document.getElementById('dpane-config');
+  configPane.innerHTML = '';
   const rows = [
-    ['Module', mod.module],
     ['Position', mod.position || '<em style="opacity:.4">none (background)</em>'],
-    ['Header', mod.header],
+    ['Header',   mod.header],
     ['Disabled', mod.disabled ? '<span style="color:var(--warn)">Yes</span>' : null],
-    ['Classes', mod.classes],
+    ['Classes',  mod.classes],
   ];
   rows.forEach(([k, v]) => {
     if (v == null) return;
     const d = document.createElement('div'); d.className = 'drow';
     d.innerHTML = `<div class="dkey">${k}</div><div class="dval">${v}</div>`;
-    body.appendChild(d);
+    configPane.appendChild(d);
   });
   if (mod.config && Object.keys(mod.config).length) {
     const d = document.createElement('div'); d.className = 'drow';
-    d.innerHTML = `<div class="dkey">Config</div><div class="dval mono">${JSON.stringify(mod.config, null, 2)}</div>`;
-    body.appendChild(d);
+    d.innerHTML = `<div class="dkey">Config</div><div class="dval mono">${escHtml(JSON.stringify(mod.config, null, 2))}</div>`;
+    configPane.appendChild(d);
   }
-  panel.classList.add('vis');
+
+  // Visual tab
+  buildVisualTab(mod);
+
+  document.getElementById('detail').classList.add('vis');
+  showDetailTab('config');
+}
+
+function buildVisualTab(mod) {
+  const pane = document.getElementById('dpane-visual');
+  pane.innerHTML = '';
+
+  const modFields = VC_MODULE_FIELDS[mod.module] || [];
+  const hasVC = Object.keys(currentVC).length > 0;
+
+  if (!hasVC) {
+    pane.innerHTML = '<div class="vf-no-vc">Load a VisualConfig.js to enable visual editing</div>';
+    return;
+  }
+
+  // Module-specific fields
+  if (modFields.length) {
+    const sec = document.createElement('div');
+    sec.className = 'vf-section';
+    sec.textContent = mod.module + ' settings';
+    pane.appendChild(sec);
+    modFields.forEach(f => pane.appendChild(buildVCField(f)));
+  }
+
+  // Global fields
+  const gsec = document.createElement('div');
+  gsec.className = 'vf-section';
+  gsec.textContent = 'Global settings';
+  pane.appendChild(gsec);
+
+  // De-dupe: skip global fields already shown in module section
+  const shownKeys = new Set(modFields.map(f => f.key));
+  VC_GLOBAL_FIELDS.filter(f => !shownKeys.has(f.key))
+    .forEach(f => pane.appendChild(buildVCField(f)));
+}
+
+function buildVCField(field) {
+  const row = document.createElement('div');
+  row.className = 'vf-row';
+
+  const label = document.createElement('div');
+  label.className = 'vf-label';
+  label.textContent = field.label;
+  row.appendChild(label);
+
+  const val = currentVC[field.key] ?? '';
+  const isColor = /^#|^rgb|^hsl/.test(String(val).trim()) ||
+                  field.key.toLowerCase().includes('color');
+
+  if (isColor && val) {
+    const cp = document.createElement('input');
+    cp.type = 'color';
+    cp.className = 'vf-color';
+    cp.value = toHex(val);
+    cp.addEventListener('input', () => {
+      ti.value = cp.value;
+      updateVCField(field.key, cp.value);
+    });
+    row.appendChild(cp);
+  }
+
+  const ti = document.createElement('input');
+  ti.type = 'text';
+  ti.className = 'vf-input';
+  ti.value = val;
+  ti.placeholder = field.hint || '';
+  ti.addEventListener('change', () => {
+    updateVCField(field.key, ti.value);
+    if (isColor) {
+      const cp2 = row.querySelector('.vf-color');
+      if (cp2) try { cp2.value = toHex(ti.value); } catch(e){}
+    }
+  });
+  row.appendChild(ti);
+
+  return row;
+}
+
+function updateVCField(key, value) {
+  currentVC[key] = value;
+
+  // Patch the vc-area text so the file stays in sync
+  const area = document.getElementById('vc-area');
+  if (area.value) {
+    const escaped = value.replace(/[\\$]/g, '\\$&');
+    area.value = area.value
+      // quoted string value:  key: "old"  or  key: 'old'
+      .replace(new RegExp(`(\\b${key}\\s*:\\s*)["'][^"'\\n]*["']`), `$1"${escaped}"`)
+      // numeric / bare value: key: 0.55
+      .replace(new RegExp(`(\\b${key}\\s*:\\s*)[^,\\n"'\\/]+`), `$1${escaped}`);
+  }
+
+  applyVisualConfig({ [key]: value });
+}
+
+function toHex(val) {
+  // Best-effort convert any CSS color string to a #rrggbb hex for <input type=color>
+  if (/^#[0-9a-f]{6}$/i.test(val)) return val;
+  if (/^#[0-9a-f]{3}$/i.test(val)) {
+    const [,r,g,b] = val.match(/#(.)(.)(.)$/);
+    return `#${r+r}${g+g}${b+b}`;
+  }
+  // For named colors / rgb() we use a canvas trick
+  try {
+    const ctx = document.createElement('canvas').getContext('2d');
+    ctx.fillStyle = val;
+    return ctx.fillStyle; // returns #rrggbb
+  } catch(e) { return '#000000'; }
+}
+
+function showDetailTab(name) {
+  document.querySelectorAll('.dtab').forEach((el, i) =>
+    el.classList.toggle('active', ['config','visual'][i] === name));
+  document.querySelectorAll('.dpane').forEach(el =>
+    el.classList.toggle('active', el.id === 'dpane-' + name));
 }
 
 function closeDetail() {
