@@ -119,9 +119,9 @@ label.ctl-label { font-size:12px; color:var(--text-dim); display:flex; align-ite
 .mod-pos  { font-size:10px; color:var(--text-dim); margin-top:1px; }
 .mod-pos.np { color:var(--warn); opacity:.7; }
 
-/* paste area */
-#paste-area {
-  width:100%; height:calc(100% - 36px);
+/* editor textareas */
+#cfg-area, #vc-area {
+  width:100%; flex:1; min-height:0;
   background:transparent; border:none;
   color:var(--text-dim); font-family:'Consolas','Courier New',monospace;
   font-size:10.5px; resize:none; outline:none; line-height:1.5;
@@ -381,9 +381,13 @@ label.ctl-label { font-size:12px; color:var(--text-dim); display:flex; align-ite
   <h1>MagicMirror <span>Visualizer</span></h1>
   <button class="btn" id="sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">☰</button>
   <div class="sep"></div>
-  <button class="btn primary" onclick="document.getElementById('fi').click()">Load config.js</button>
+  <button class="btn primary" onclick="openConfigFile()">Load config.js</button>
+  <button class="btn" id="btn-save-cfg" onclick="saveConfigFile()" style="display:none" title="Save edits back to Config.js">💾 Save Config</button>
+  <div class="sep"></div>
+  <button class="btn" onclick="openVisualConfigFile()">Load VisualConfig.js</button>
+  <button class="btn" id="btn-save-vc" onclick="saveVisualConfigFile()" style="display:none" title="Save edits back to VisualConfig.js">💾 Save Visual</button>
+  <!-- fallback inputs for browsers without File System Access API -->
   <input type="file" id="fi" accept=".js,.json" style="display:none">
-  <button class="btn" onclick="document.getElementById('vi').click()">Load VisualConfig.js</button>
   <input type="file" id="vi" accept=".js" style="display:none">
   <select class="ctl" id="res" onchange="applyRes()">
     <option value="1920x1080">1920×1080 (Full HD)</option>
@@ -413,15 +417,29 @@ label.ctl-label { font-size:12px; color:var(--text-dim); display:flex; align-ite
   <div id="sidebar">
     <div id="sidebar-tabs">
       <div class="stab active" onclick="showTab('modules')">Modules</div>
-      <div class="stab" onclick="showTab('paste')">Paste / Edit</div>
+      <div class="stab" onclick="showTab('cfg')">Config.js</div>
+      <div class="stab" onclick="showTab('vc')">VisualConfig</div>
       <div class="stab" onclick="showTab('raw')">JSON</div>
     </div>
     <div id="sidebar-body">
       <div id="t-modules"><div style="color:var(--text-dimmer);font-size:12px;padding:6px 2px">No config loaded.</div></div>
-      <div id="t-paste" style="display:none;height:calc(100vh - 100px);display:none;flex-direction:column">
-        <textarea id="paste-area" placeholder="Paste config.js here then click Apply…" spellcheck="false"></textarea>
-        <button class="btn primary" style="width:100%;margin-top:6px;flex-shrink:0" onclick="applyPaste()">Apply</button>
+
+      <div id="t-cfg" style="display:none;height:calc(100vh - 105px);flex-direction:column">
+        <textarea id="cfg-area" placeholder="Paste or load Config.js…" spellcheck="false"></textarea>
+        <div style="display:flex;gap:6px;margin-top:6px;flex-shrink:0">
+          <button class="btn primary" style="flex:1" onclick="applyPaste()">Apply</button>
+          <button class="btn" style="flex:1" onclick="saveConfigFile()" title="Write back to original file">💾 Save</button>
+        </div>
       </div>
+
+      <div id="t-vc" style="display:none;height:calc(100vh - 105px);flex-direction:column">
+        <textarea id="vc-area" placeholder="Paste or load VisualConfig.js…" spellcheck="false"></textarea>
+        <div style="display:flex;gap:6px;margin-top:6px;flex-shrink:0">
+          <button class="btn primary" style="flex:1" onclick="applyVCArea()">Apply</button>
+          <button class="btn" style="flex:1" onclick="saveVisualConfigFile()" title="Write back to original file">💾 Save</button>
+        </div>
+      </div>
+
       <div id="t-raw" style="display:none"><pre id="raw-json" style="font-size:10px;color:var(--text-dim);white-space:pre-wrap;word-break:break-all;line-height:1.5"></pre></div>
     </div>
   </div>
@@ -505,54 +523,152 @@ const ALL_REGIONS = [
 ];
 
 // ══════════════════════════════════════════════════════════
-// File loading
+// File loading — File System Access API with fallback
 // ══════════════════════════════════════════════════════════
+let configFileHandle = null;
+let visualConfigFileHandle = null;
+
+const FS_SUPPORTED = 'showOpenFilePicker' in window;
+
+// Fallback inputs for non-supporting browsers
 document.getElementById('fi').addEventListener('change', e => {
-  if (e.target.files[0]) readFile(e.target.files[0]);
+  const f = e.target.files[0]; if (!f) return;
   e.target.value = '';
+  const r = new FileReader();
+  r.onload = ev => { processText(ev.target.result, f.name); showSaveBtn('cfg', true); };
+  r.readAsText(f);
+});
+document.getElementById('vi').addEventListener('change', e => {
+  const f = e.target.files[0]; if (!f) return;
+  e.target.value = '';
+  const r = new FileReader();
+  r.onload = ev => { loadVisualConfigText(ev.target.result, f.name); showSaveBtn('vc', true); };
+  r.readAsText(f);
 });
 
-document.getElementById('vi').addEventListener('change', e => {
-  if (e.target.files[0]) readVisualConfig(e.target.files[0]);
-  e.target.value = '';
-});
+async function openConfigFile() {
+  if (FS_SUPPORTED) {
+    try {
+      const [handle] = await window.showOpenFilePicker({
+        types: [{ description: 'Config file', accept: { 'text/javascript': ['.js','.json'] } }]
+      });
+      configFileHandle = handle;
+      const file = await handle.getFile();
+      const text = await file.text();
+      processText(text, file.name);
+      showSaveBtn('cfg', true);
+      return;
+    } catch(e) { if (e.name === 'AbortError') return; }
+  }
+  document.getElementById('fi').click();
+}
+
+async function openVisualConfigFile() {
+  if (FS_SUPPORTED) {
+    try {
+      const [handle] = await window.showOpenFilePicker({
+        types: [{ description: 'VisualConfig file', accept: { 'text/javascript': ['.js'] } }]
+      });
+      visualConfigFileHandle = handle;
+      const file = await handle.getFile();
+      const text = await file.text();
+      loadVisualConfigText(text, file.name);
+      showSaveBtn('vc', true);
+      return;
+    } catch(e) { if (e.name === 'AbortError') return; }
+  }
+  document.getElementById('vi').click();
+}
+
+async function saveConfigFile() {
+  const text = document.getElementById('cfg-area').value;
+  if (!text) return;
+  await saveText(text, configFileHandle, 'Config.js');
+}
+
+async function saveVisualConfigFile() {
+  const text = document.getElementById('vc-area').value;
+  if (!text) return;
+  await saveText(text, visualConfigFileHandle, 'VisualConfig.js');
+}
+
+async function saveText(text, handle, fallbackName) {
+  if (handle) {
+    try {
+      const writable = await handle.createWritable();
+      await writable.write(text);
+      await writable.close();
+      setStatus('Saved to ' + (await handle.getFile()).name, 'ok');
+      return;
+    } catch(e) { setStatus('Save failed: ' + e.message, 'err'); return; }
+  }
+  // Fallback: prompt Save As via showSaveFilePicker, else download
+  if (FS_SUPPORTED) {
+    try {
+      const newHandle = await window.showSaveFilePicker({
+        suggestedName: fallbackName,
+        types: [{ description: 'JavaScript', accept: { 'text/javascript': ['.js'] } }]
+      });
+      const writable = await newHandle.createWritable();
+      await writable.write(text);
+      await writable.close();
+      setStatus('Saved as ' + fallbackName, 'ok');
+      return;
+    } catch(e) { if (e.name === 'AbortError') return; }
+  }
+  // Last resort: browser download
+  const blob = new Blob([text], { type: 'text/javascript' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = fallbackName; a.click();
+  URL.revokeObjectURL(url);
+  setStatus('Downloaded ' + fallbackName + ' (no file handle — re-load file to enable direct save)', '');
+}
+
+function showSaveBtn(which, show) {
+  const id = which === 'cfg' ? 'btn-save-cfg' : 'btn-save-vc';
+  document.getElementById(id).style.display = show ? '' : 'none';
+}
+
+function loadVisualConfigText(text, name) {
+  try {
+    const vc = parseVisualConfig(text);
+    applyVisualConfig(vc);
+    document.getElementById('vc-area').value = text;
+    setStatus('VisualConfig loaded: ' + name, 'ok');
+  } catch(e) {
+    setStatus('VisualConfig error: ' + e.message, 'err');
+  }
+}
 
 document.addEventListener('dragover', e => { e.preventDefault(); document.getElementById('drop-overlay').classList.add('on'); });
 document.addEventListener('dragleave', e => { if (!e.relatedTarget) document.getElementById('drop-overlay').classList.remove('on'); });
 document.addEventListener('drop', e => {
   e.preventDefault();
   document.getElementById('drop-overlay').classList.remove('on');
-  if (e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]);
+  const f = e.dataTransfer.files[0];
+  if (f) { const r = new FileReader(); r.onload = ev => processText(ev.target.result, f.name); r.readAsText(f); }
 });
 
-function readFile(f) {
-  const r = new FileReader();
-  r.onload = ev => processText(ev.target.result, f.name);
-  r.readAsText(f);
-}
 
 function applyPaste() {
-  const t = document.getElementById('paste-area').value.trim();
+  const t = document.getElementById('cfg-area').value.trim();
   if (t) processText(t, 'pasted config');
 }
 
-// ══════════════════════════════════════════════════════════
-// VisualConfig loading & applying
-// ══════════════════════════════════════════════════════════
-function readVisualConfig(file) {
-  const r = new FileReader();
-  r.onload = ev => {
-    try {
-      const vc = parseVisualConfig(ev.target.result);
-      applyVisualConfig(vc);
-      setStatus('VisualConfig loaded: ' + file.name, 'ok');
-    } catch(e) {
-      setStatus('VisualConfig error: ' + e.message, 'err');
-    }
-  };
-  r.readAsText(file);
+function applyVCArea() {
+  const t = document.getElementById('vc-area').value.trim();
+  if (!t) return;
+  try {
+    const vc = parseVisualConfig(t);
+    applyVisualConfig(vc);
+    setStatus('VisualConfig applied', 'ok');
+  } catch(e) { setStatus('VisualConfig error: ' + e.message, 'err'); }
 }
 
+// ══════════════════════════════════════════════════════════
+// VisualConfig parsing & applying
+// ══════════════════════════════════════════════════════════
 function parseVisualConfig(text) {
   const clean = text.replace(/if\s*\(typeof module[\s\S]*?;\s*$/m, '');
   const fn = new Function('module','exports',
@@ -629,7 +745,7 @@ function applyVisualConfig(vc) {
 function processText(text, src) {
   try {
     cfg = parseConfig(text);
-    document.getElementById('paste-area').value = text;
+    document.getElementById('cfg-area').value = text;
     setStatus('Loaded: ' + src, 'ok');
     render();
   } catch(e) {
@@ -1393,12 +1509,14 @@ function closeDetail() {
 // Tabs
 // ══════════════════════════════════════════════════════════
 function showTab(name) {
-  ['modules','paste','raw'].forEach(t => {
+  const tabs = ['modules','cfg','vc','raw'];
+  const flex = ['cfg','vc'];
+  tabs.forEach(t => {
     const el = document.getElementById('t-' + t);
-    el.style.display = t === name ? (t === 'paste' ? 'flex' : '') : 'none';
+    el.style.display = t === name ? (flex.includes(t) ? 'flex' : '') : 'none';
   });
   document.querySelectorAll('.stab').forEach((el, i) => {
-    el.classList.toggle('active', ['modules','paste','raw'][i] === name);
+    el.classList.toggle('active', tabs[i] === name);
   });
 }
 
