@@ -350,6 +350,29 @@ label.ctl-label { font-size:12px; color:var(--text-dim); display:flex; align-ite
 .vf-no-vc { font-size:11px; color:var(--text-dimmer); font-style:italic; text-align:center; padding:16px 0; }
 .vf-preview-note { font-size:9.5px; color:rgba(255,255,255,.2); font-style:italic; margin-top:2px; line-height:1.3; }
 
+/* ── Free-position overlay ───────────────────────────── */
+#free-layer {
+  position:absolute; inset:0; pointer-events:none; z-index:20; overflow:hidden;
+}
+#free-layer .mm-wrap {
+  pointer-events:auto; position:absolute; cursor:move;
+  box-shadow:0 0 0 1px rgba(79,195,247,.35), 0 4px 16px rgba(0,0,0,.5);
+}
+#free-layer .mm-wrap::before {
+  content:'FREE'; position:absolute; top:2px; left:4px;
+  font-size:7px; color:rgba(79,195,247,.5); letter-spacing:.08em; pointer-events:none;
+}
+.free-pos-note {
+  font-size:9.5px; color:rgba(255,255,255,.2); font-style:italic;
+  margin-top:3px; line-height:1.4;
+}
+.vf-copy-css {
+  margin-top:8px; font-size:11px; width:100%;
+  background:rgba(79,195,247,.12); border:1px solid rgba(79,195,247,.3);
+  color:var(--accent); padding:5px; border-radius:5px; cursor:pointer; text-align:center;
+}
+.vf-copy-css:hover { background:rgba(79,195,247,.22); }
+
 /* ── Resize handles ──────────────────────────────────── */
 .resize-handle {
   position:absolute; z-index:6; opacity:0;
@@ -605,6 +628,9 @@ label.ctl-label { font-size:12px; color:var(--text-dim); display:flex; align-ite
       <!-- fullscreen_above -->
       <div class="region-row" id="row-fsa"><div class="region fullscreen_above" id="region-fullscreen_above"><div class="rlabel">fullscreen_above</div></div></div>
 
+      <!-- Free-position overlay — modules dragged out of regions live here -->
+      <div id="free-layer"></div>
+
     </div>
   </div>
 </div>
@@ -641,7 +667,8 @@ let cfg = null;
 let selIdx = null;
 let clockTimer = null;
 let currentVC = {};   // live copy of VisualConfig, updated on every apply
-let previewWidths = {}; // per-module width overrides: key → px string
+let previewWidths  = {}; // per-module width overrides: key → px string
+let freePositions  = {}; // per-module free coords: key → { top, left }
 
 // Default values matching MagicMirror's main.css + VisualConfig.js template
 const VC_DEFAULTS = {
@@ -1020,14 +1047,28 @@ function render() {
     }
   });
 
-  // Place modules
+  // Place modules — skip free-positioned ones (they go on the overlay)
   modules.forEach((mod, i) => {
+    if (freePositions[widthKey(mod)]) return;
     const pos = mod.position;
     const el = pos && document.getElementById('region-' + pos);
     if (pos && el) {
       if (pos.startsWith('fullscreen')) el.parentElement.style.display = '';
       el.appendChild(buildWrap(mod, i));
     }
+  });
+
+  // Place free-positioned modules on the overlay
+  const freeLayer = document.getElementById('free-layer');
+  freeLayer.innerHTML = '';
+  modules.forEach((mod, i) => {
+    const fp = freePositions[widthKey(mod)];
+    if (!fp) return;
+    const wrap = buildWrap(mod, i);
+    wrap.style.top  = fp.top  + 'px';
+    wrap.style.left = fp.left + 'px';
+    enableFreeDrag(wrap, mod);
+    freeLayer.appendChild(wrap);
   });
 
   // Sidebar
@@ -1752,11 +1793,12 @@ function buildVisualTab(mod) {
   VC_GLOBAL_FIELDS.filter(f => !shownKeys.has(f.key))
     .forEach(f => pane.appendChild(buildVCField(f)));
 
-  // Width override (preview only)
+  // Preview overrides section
   const wsec = document.createElement('div');
   wsec.className = 'vf-section';
   wsec.textContent = 'Preview overrides';
   pane.appendChild(wsec);
+  pane.appendChild(buildFreePositionField(mod));
   pane.appendChild(buildWidthField(mod));
 }
 
@@ -2143,6 +2185,158 @@ function buildBrowseItem(item) {
     document.getElementById('mirror').classList.remove('drag-active');
   });
   return div;
+}
+
+// ══════════════════════════════════════════════════════════
+// Free positioning — lift modules out of regions
+// ══════════════════════════════════════════════════════════
+function buildFreePositionField(mod) {
+  const key = widthKey(mod);
+  const isFree = !!freePositions[key];
+  const wrap = document.createElement('div');
+  wrap.style.marginBottom = '6px';
+
+  // Toggle row
+  const row = document.createElement('div');
+  row.className = 'vf-row';
+  const label = document.createElement('label');
+  label.className = 'vf-label';
+  label.style.cursor = 'pointer';
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.checked = isFree;
+  cb.style.marginRight = '5px';
+  cb.addEventListener('change', () => toggleFreePosition(mod, cb.checked));
+  label.appendChild(cb);
+  label.append('Free position');
+  row.appendChild(label);
+  wrap.appendChild(row);
+
+  if (isFree) {
+    const fp = freePositions[key];
+
+    // X / Y fields
+    const xyRow = document.createElement('div');
+    xyRow.className = 'vf-row';
+    xyRow.style.gap = '4px';
+
+    ['top','left'].forEach(axis => {
+      const lbl = document.createElement('span');
+      lbl.style.cssText = 'font-size:10px;color:var(--text-dim);flex-shrink:0';
+      lbl.textContent = axis === 'top' ? 'Y:' : 'X:';
+      const inp = document.createElement('input');
+      inp.type = 'text';
+      inp.className = 'vf-input';
+      inp.dataset.vcKey = '__free_' + axis;
+      inp.style.width = '60px';
+      inp.value = Math.round(fp[axis]) + 'px';
+      inp.addEventListener('change', () => {
+        const v = parseInt(inp.value) || 0;
+        freePositions[key][axis] = v;
+        const el = document.querySelector(`#free-layer .mm-wrap[data-idx="${selIdx}"]`);
+        if (el) el.style[axis] = v + 'px';
+      });
+      xyRow.appendChild(lbl);
+      xyRow.appendChild(inp);
+    });
+    wrap.appendChild(xyRow);
+
+    // Copy CSS button
+    const btn = document.createElement('div');
+    btn.className = 'vf-copy-css';
+    btn.textContent = '📋 Copy custom.css rules for Pi';
+    btn.addEventListener('click', () => {
+      const css = generateFreeCSS();
+      navigator.clipboard.writeText(css).then(() => {
+        btn.textContent = '✓ Copied!';
+        setTimeout(() => btn.textContent = '📋 Copy custom.css rules for Pi', 2000);
+      });
+    });
+    wrap.appendChild(btn);
+
+    const note = document.createElement('div');
+    note.className = 'free-pos-note';
+    note.textContent = 'Paste copied CSS into MagicMirror/config/custom.css on the Pi to match this layout.';
+    wrap.appendChild(note);
+  }
+
+  return wrap;
+}
+
+function toggleFreePosition(mod, enable) {
+  const key = widthKey(mod);
+  if (enable) {
+    // Snapshot current rendered position relative to mirror
+    const mirror = document.getElementById('mirror');
+    const zoom   = parseFloat(document.getElementById('zoom').value) || 0.55;
+    const wrap   = document.querySelector(`.mm-wrap[data-idx="${selIdx}"]`);
+    let top = 80, left = 80;
+    if (wrap) {
+      const mr = mirror.getBoundingClientRect();
+      const wr = wrap.getBoundingClientRect();
+      top  = Math.round((wr.top  - mr.top)  / zoom);
+      left = Math.round((wr.left - mr.left) / zoom);
+    }
+    freePositions[key] = { top, left };
+  } else {
+    delete freePositions[key];
+  }
+  render();
+  // Re-open detail panel on the same module
+  if (cfg && selIdx !== null) showDetail(cfg.modules[selIdx]);
+}
+
+function enableFreeDrag(wrap, mod) {
+  wrap.addEventListener('mousedown', e => {
+    if (e.target.closest('.resize-handle, input, .vf-reset, #detail')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const zoom     = parseFloat(document.getElementById('zoom').value) || 0.55;
+    const key      = widthKey(mod);
+    const startX   = e.clientX;
+    const startY   = e.clientY;
+    const startTop = freePositions[key]?.top  ?? 0;
+    const startLeft= freePositions[key]?.left ?? 0;
+
+    function onMove(e) {
+      const top  = Math.max(0, Math.round(startTop  + (e.clientY - startY) / zoom));
+      const left = Math.max(0, Math.round(startLeft + (e.clientX - startX) / zoom));
+      freePositions[key] = { top, left };
+      wrap.style.top  = top  + 'px';
+      wrap.style.left = left + 'px';
+      // Sync coordinate fields in detail panel if open
+      syncVCPanelField('__free_top',  top  + 'px');
+      syncVCPanelField('__free_left', left + 'px');
+    }
+    function onUp() {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup',   onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup',   onUp);
+  });
+}
+
+function generateFreeCSS() {
+  const lines = ['/* Free-positioned modules — paste into MagicMirror/config/custom.css */'];
+  let hasAny = false;
+  (cfg?.modules || []).forEach(mod => {
+    const key = widthKey(mod);
+    const fp  = freePositions[key];
+    if (!fp) return;
+    hasAny = true;
+    const cls = 'free-' + mod.module.replace(/[^a-zA-Z0-9]/g,'-').toLowerCase();
+    lines.push('');
+    lines.push(`/* Add  classes: "${cls}"  to the "${mod.module}" module in Config.js */`);
+    lines.push(`.${cls} {`);
+    lines.push(`  position: absolute !important;`);
+    lines.push(`  top:  ${Math.round(fp.top)}px  !important;`);
+    lines.push(`  left: ${Math.round(fp.left)}px !important;`);
+    if (previewWidths[key]) lines.push(`  width: ${previewWidths[key]} !important;`);
+    lines.push('}');
+  });
+  if (!hasAny) return '/* No free-positioned modules yet */';
+  return lines.join('\n');
 }
 
 // ══════════════════════════════════════════════════════════
