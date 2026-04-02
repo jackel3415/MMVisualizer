@@ -72,6 +72,7 @@ select.ctl {
   cursor: pointer; outline: none;
 }
 select.ctl:hover { border-color: rgba(255,255,255,0.28); }
+select.ctl option { background: #1e1e1e; color: #fff; }
 
 label.ctl-label { font-size:12px; color:var(--text-dim); display:flex; align-items:center; gap:5px; cursor:pointer; }
 
@@ -888,19 +889,118 @@ function buildCalendar(mod) {
   const c = mod.config || {};
   const div = document.createElement('div');
   div.className = 'mm-calendar';
-  // Show placeholder events
-  const events = [
-    { title: 'Sample Event', date: 'Today' },
-    { title: 'Another Event', date: 'Tomorrow' },
-    { title: 'Weekly Meeting', date: 'In 3 days' },
-  ];
-  events.forEach(e => {
-    const row = document.createElement('div');
-    row.className = 'cal-event';
-    row.innerHTML = `<span class="cal-dot">●</span><span class="cal-title">${e.title}</span><span class="cal-date">${e.date}</span>`;
-    div.appendChild(row);
+  div.innerHTML = '<div class="weather-loading">Loading calendar…</div>';
+
+  const feeds = c.calendars || c.feeds || [];
+  if (!feeds.length) {
+    div.innerHTML = '<div class="mm-placeholder"><strong>calendar</strong> — no calendars configured</div>';
+    return div;
+  }
+
+  const maxEvents = c.maximumEntries ?? c.maxEntries ?? 10;
+  fetchCalendarEvents(feeds, maxEvents).then(events => {
+    div.innerHTML = '';
+    if (!events.length) {
+      div.innerHTML = '<div class="weather-loading">No upcoming events</div>';
+      return;
+    }
+    events.forEach(e => {
+      const row = document.createElement('div');
+      row.className = 'cal-event';
+      row.innerHTML = `<span class="cal-dot">●</span><span class="cal-title">${escHtml(e.title)}</span><span class="cal-date">${escHtml(e.dateStr)}</span>`;
+      div.appendChild(row);
+    });
+  }).catch(() => {
+    div.innerHTML = '<div class="weather-err">Could not load calendar</div>';
   });
+
   return div;
+}
+
+async function fetchCalendarEvents(feeds, max) {
+  const now = new Date();
+  const allEvents = [];
+
+  await Promise.all(feeds.map(async feed => {
+    let url = feed.url || feed;
+    // webcal:// → https://
+    url = url.replace(/^webcal:\/\//i, 'https://');
+    try {
+      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+      const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
+      if (!resp.ok) return;
+      const text = await resp.text();
+      const events = parseIcal(text, now);
+      allEvents.push(...events);
+    } catch(e) { /* skip failed feeds */ }
+  }));
+
+  allEvents.sort((a, b) => a.start - b.start);
+  return allEvents.slice(0, max);
+}
+
+function parseIcal(text, now) {
+  const events = [];
+  // Unfold lines (RFC5545: CRLF + whitespace = continuation)
+  const unfolded = text.replace(/\r?\n[ \t]/g, '');
+  const lines = unfolded.split(/\r?\n/);
+
+  let inEvent = false, cur = {};
+  for (const line of lines) {
+    if (line === 'BEGIN:VEVENT')  { inEvent = true; cur = {}; continue; }
+    if (line === 'END:VEVENT') {
+      inEvent = false;
+      if (cur.title && cur.start) {
+        const start = parseIcalDate(cur.start);
+        if (start && start >= now) {
+          events.push({ title: cur.title, start, dateStr: fmtEventDate(start, cur.allDay) });
+        }
+      }
+      continue;
+    }
+    if (!inEvent) continue;
+
+    const [prop, ...rest] = line.split(':');
+    const val = rest.join(':').trim();
+    const propName = prop.split(';')[0].toUpperCase();
+
+    if (propName === 'SUMMARY')  cur.title = val.replace(/\\,/g, ',').replace(/\\n/g, ' ');
+    if (propName === 'DTSTART') {
+      cur.start = val;
+      cur.allDay = !val.includes('T');
+    }
+  }
+  return events;
+}
+
+function parseIcalDate(val) {
+  // Remove TZID param if present (val is after first colon split)
+  const clean = val.replace(/^[^:]*:/, '');
+  const s = clean.replace(/Z$/, '');
+  if (s.length === 8) {
+    // all-day: YYYYMMDD
+    return new Date(s.slice(0,4), s.slice(4,6)-1, s.slice(6,8));
+  }
+  // datetime: YYYYMMDDTHHMMSS
+  return new Date(
+    s.slice(0,4), s.slice(4,6)-1, s.slice(6,8),
+    s.slice(9,11)||0, s.slice(11,13)||0, s.slice(13,15)||0
+  );
+}
+
+function fmtEventDate(d, allDay) {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const evDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diff = Math.round((evDay - today) / 86400000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Tomorrow';
+  if (diff < 7)  return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()];
+  return `${d.getMonth()+1}/${d.getDate()}`;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 function buildAlert() {
@@ -1003,17 +1103,8 @@ function applyRes() {
   const m = document.getElementById('mirror');
   m.style.width  = w + 'px';
   m.style.height = h + 'px';
-  // Compensate for the fact that scale() doesn't shrink layout footprint.
-  // Pull in by half the difference on each side so it stays centered.
-  const shrunkW = w * z;
-  const shrunkH = h * z;
-  const mx = (shrunkW - w) / 2;
-  const my = (shrunkH - h) / 2;
   m.style.transform = `scale(${z})`;
-  m.style.marginLeft   = mx + 'px';
-  m.style.marginRight  = mx + 'px';
-  m.style.marginTop    = my + 'px';
-  m.style.marginBottom = my + 'px';
+  m.style.margin = '0';
 }
 
 // ══════════════════════════════════════════════════════════
