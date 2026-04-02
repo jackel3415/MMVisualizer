@@ -580,7 +580,10 @@ label.ctl-label { font-size:12px; color:var(--text-dim); display:flex; align-ite
   <div id="detail-hdr">
     <div id="detail-hdr-top">
       <span id="detail-title">Module</span>
-      <div id="detail-close" onclick="closeDetail()">×</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div onclick="deleteSelectedModule()" title="Delete module (Delete key)" style="cursor:pointer;font-size:12px;color:#ef9a9a;opacity:.7;padding:2px 6px;border:1px solid rgba(239,154,154,.3);border-radius:4px;line-height:1.4" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=.7">🗑 Delete</div>
+        <div id="detail-close" onclick="closeDetail()">×</div>
+      </div>
     </div>
     <div id="detail-tabs">
       <div class="dtab active" onclick="showDetailTab('config')">Config</div>
@@ -1772,6 +1775,25 @@ function closeDetail() {
   selIdx = null;
   document.querySelectorAll('.mm-wrap, .mod-entry').forEach(el => el.classList.remove('sel'));
 }
+
+function deleteSelectedModule() {
+  if (selIdx === null || !cfg) return;
+  const mod = cfg.modules[selIdx];
+  if (!mod) return;
+  cfg.modules.splice(selIdx, 1);
+  closeDetail();
+  updateConfigArea();
+  render();
+  setStatus(`Deleted "${mod.module}" — click 💾 Save to write to disk`, '');
+}
+
+// Delete key removes the selected module (guards against firing inside inputs)
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+  const tag = document.activeElement?.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  deleteSelectedModule();
+});
 
 // ══════════════════════════════════════════════════════════
 // Tabs
