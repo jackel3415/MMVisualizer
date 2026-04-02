@@ -136,7 +136,29 @@ label.ctl-label { font-size:12px; color:var(--text-dim); display:flex; align-ite
 
 /* ── Mirror ──────────────────────────────────────────── */
 #mirror {
-  background: var(--mirror-bg);
+  /* MM CSS variable defaults — overridden by VisualConfig.js */
+  --color-text:        #999;
+  --color-text-dimmed: #666;
+  --color-text-bright: #fff;
+  --color-background:  #000;
+  --font-primary:      "Roboto Condensed", "Segoe UI", sans-serif;
+  --font-secondary:    "Roboto", sans-serif;
+  --font-size:         20px;
+  --font-size-xsmall:  0.75rem;
+  --font-size-small:   1rem;
+  --font-size-medium:  1.5rem;
+  --font-size-large:   3.25rem;
+  --font-size-xlarge:  3.75rem;
+  --gap-body-top:      60px;
+  --gap-body-right:    60px;
+  --gap-body-bottom:   60px;
+  --gap-body-left:     60px;
+  --gap-modules:       30px;
+
+  background: var(--color-background);
+  color: var(--color-text);
+  font-family: var(--font-primary);
+  font-size: var(--font-size);
   border: 2px solid #181818;
   border-radius: 3px;
   box-shadow: 0 0 80px rgba(0,0,0,.9), inset 0 0 40px rgba(0,0,0,.6);
@@ -199,20 +221,20 @@ label.ctl-label { font-size:12px; color:var(--text-dim); display:flex; align-ite
 
 /* MM region header (header: "text") */
 .mm-region-header {
-  font-size: 11px; font-weight: 400; text-transform: uppercase;
-  letter-spacing: .12em; color: rgba(255,255,255,0.45);
-  border-bottom: 1px solid rgba(255,255,255,0.08);
+  font-size: var(--font-size-xsmall); font-weight: 400; text-transform: uppercase;
+  letter-spacing: .12em; color: var(--color-text);
+  border-bottom: 1px solid var(--color-text-dimmed);
   padding-bottom: 4px; margin-bottom: 4px; width: 100%;
 }
 
 /* ── Clock module ────────────────────────────────────── */
 .mm-clock { line-height:1; }
 .mm-clock .time {
-  font-size: 5em; font-weight: 100; letter-spacing: -.02em;
-  color: #fff;
+  font-size: var(--font-size-xlarge); font-weight: 100; letter-spacing: -.02em;
+  color: var(--color-text-bright);
 }
 .mm-clock .date {
-  font-size: 1.1em; font-weight: 300; color: rgba(255,255,255,0.6);
+  font-size: var(--font-size-small); font-weight: 300; color: var(--color-text-dimmed);
   text-transform: uppercase; letter-spacing: .12em; margin-top:4px;
 }
 
@@ -240,8 +262,8 @@ label.ctl-label { font-size:12px; color:var(--text-dim); display:flex; align-ite
 
 /* ── Compliments module ──────────────────────────────── */
 .mm-compliments {
-  font-size: 1.8em; font-weight: 300; text-align: center;
-  color: rgba(255,255,255,.75); font-style: italic; max-width: 500px;
+  font-size: var(--font-size-medium); font-weight: 300; text-align: center;
+  color: var(--color-text); font-style: italic; max-width: 500px;
 }
 
 /* ── Newsfeed module ─────────────────────────────────── */
@@ -361,6 +383,8 @@ label.ctl-label { font-size:12px; color:var(--text-dim); display:flex; align-ite
   <div class="sep"></div>
   <button class="btn primary" onclick="document.getElementById('fi').click()">Load config.js</button>
   <input type="file" id="fi" accept=".js,.json" style="display:none">
+  <button class="btn" onclick="document.getElementById('vi').click()">Load VisualConfig.js</button>
+  <input type="file" id="vi" accept=".js" style="display:none">
   <select class="ctl" id="res" onchange="applyRes()">
     <option value="1920x1080">1920×1080 (Full HD)</option>
     <option value="1280x720">1280×720 (HD)</option>
@@ -488,6 +512,11 @@ document.getElementById('fi').addEventListener('change', e => {
   e.target.value = '';
 });
 
+document.getElementById('vi').addEventListener('change', e => {
+  if (e.target.files[0]) readVisualConfig(e.target.files[0]);
+  e.target.value = '';
+});
+
 document.addEventListener('dragover', e => { e.preventDefault(); document.getElementById('drop-overlay').classList.add('on'); });
 document.addEventListener('dragleave', e => { if (!e.relatedTarget) document.getElementById('drop-overlay').classList.remove('on'); });
 document.addEventListener('drop', e => {
@@ -505,6 +534,93 @@ function readFile(f) {
 function applyPaste() {
   const t = document.getElementById('paste-area').value.trim();
   if (t) processText(t, 'pasted config');
+}
+
+// ══════════════════════════════════════════════════════════
+// VisualConfig loading & applying
+// ══════════════════════════════════════════════════════════
+function readVisualConfig(file) {
+  const r = new FileReader();
+  r.onload = ev => {
+    try {
+      const vc = parseVisualConfig(ev.target.result);
+      applyVisualConfig(vc);
+      setStatus('VisualConfig loaded: ' + file.name, 'ok');
+    } catch(e) {
+      setStatus('VisualConfig error: ' + e.message, 'err');
+    }
+  };
+  r.readAsText(file);
+}
+
+function parseVisualConfig(text) {
+  const clean = text.replace(/if\s*\(typeof module[\s\S]*?;\s*$/m, '');
+  const fn = new Function('module','exports',
+    clean + '\nreturn typeof visualConfig!=="undefined"?visualConfig:null;');
+  const vc = fn({exports:{}},{});
+  if (!vc) throw new Error('No visualConfig object found');
+  return vc;
+}
+
+function applyVisualConfig(vc) {
+  const mirror = document.getElementById('mirror');
+
+  // Map VisualConfig properties → MagicMirror CSS variables on the mirror element
+  const varMap = {
+    colorText:        '--color-text',
+    colorTextDimmed:  '--color-text-dimmed',
+    colorTextBright:  '--color-text-bright',
+    colorBackground:  '--color-background',
+    fontPrimary:      '--font-primary',
+    fontSecondary:    '--font-secondary',
+    fontSize:         '--font-size',
+    fontSizeXSmall:   '--font-size-xsmall',
+    fontSizeSmall:    '--font-size-small',
+    fontSizeMedium:   '--font-size-medium',
+    fontSizeLarge:    '--font-size-large',
+    fontSizeXLarge:   '--font-size-xlarge',
+    gapBodyTop:       '--gap-body-top',
+    gapBodyRight:     '--gap-body-right',
+    gapBodyBottom:    '--gap-body-bottom',
+    gapBodyLeft:      '--gap-body-left',
+    gapModules:       '--gap-modules',
+  };
+
+  Object.entries(varMap).forEach(([key, cssVar]) => {
+    if (vc[key] !== undefined) mirror.style.setProperty(cssVar, vc[key]);
+  });
+
+  // Apply background color directly
+  if (vc.colorBackground) mirror.style.background = vc.colorBackground;
+
+  // Apply calendar-specific overrides via injected style tag
+  if (vc.calendarFontSize || vc.calendarCellHeight) {
+    let styleTag = document.getElementById('vc-override');
+    if (!styleTag) {
+      styleTag = document.createElement('style');
+      styleTag.id = 'vc-override';
+      document.head.appendChild(styleTag);
+    }
+    let css = '';
+    if (vc.calendarFontSize)   css += `.mm-calext3 { font-size: ${vc.calendarFontSize} !important; }\n`;
+    if (vc.calendarCellHeight) css += `.calext3-cell { min-height: ${vc.calendarCellHeight} !important; }\n`;
+    styleTag.textContent = css;
+  }
+
+  // Apply visualizer resolution/zoom if specified
+  if (vc.resolution) {
+    const sel = document.getElementById('res');
+    if ([...sel.options].some(o => o.value === vc.resolution)) sel.value = vc.resolution;
+  }
+  if (vc.zoom !== undefined) {
+    const sel = document.getElementById('zoom');
+    const zStr = String(vc.zoom);
+    if ([...sel.options].some(o => o.value === zStr)) sel.value = zStr;
+  }
+  applyRes();
+
+  // Re-render if config is already loaded
+  if (cfg) render();
 }
 
 // ══════════════════════════════════════════════════════════
