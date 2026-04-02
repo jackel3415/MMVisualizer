@@ -622,11 +622,14 @@ function buildContent(mod, idx) {
 function buildClock(mod) {
   const c = mod.config || {};
   const fmt = c.timeFormat ?? cfg?.timeFormat ?? 24;
+  const showSecs = c.displaySeconds ?? c.showSeconds ?? c.seconds ?? true;
+  const showDate = c.showDate ?? c.displayDate ?? true;
   const div = document.createElement('div');
   div.className = 'mm-clock';
   div.innerHTML = '<div class="time" id="clock-time"></div><div class="date" id="clock-date"></div>';
-  // tick happens via startClock
   div.dataset.fmt = fmt;
+  div.dataset.showSecs = showSecs;
+  div.dataset.showDate = showDate;
   return div;
 }
 
@@ -637,14 +640,18 @@ function startClock(modules) {
     const tEl = document.getElementById('clock-time');
     const dEl = document.getElementById('clock-date');
     if (!tEl || !dEl) return;
+    const clockDiv = tEl.closest('.mm-clock');
     const now = new Date();
-    const fmt = parseInt(tEl.closest('.mm-clock')?.dataset.fmt || '24');
+    const fmt = parseInt(clockDiv?.dataset.fmt || '24');
+    const showSecs = clockDiv?.dataset.showSecs !== 'false';
+    const showDate = clockDiv?.dataset.showDate !== 'false';
     let h = now.getHours(), m = now.getMinutes(), s = now.getSeconds();
     let suffix = '';
     if (fmt === 12) { suffix = h >= 12 ? ' PM' : ' AM'; h = h % 12 || 12; }
-    tEl.textContent = `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}` + suffix;
+    tEl.textContent = `${h}:${String(m).padStart(2,'0')}` + (showSecs ? `:${String(s).padStart(2,'0')}` : '') + suffix;
     const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
     const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    dEl.style.display = showDate ? '' : 'none';
     dEl.textContent = `${days[now.getDay()]}, ${months[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
   }
   tick();
