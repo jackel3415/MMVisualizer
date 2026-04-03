@@ -136,7 +136,7 @@ label.ctl-label { font-size:12px; color:var(--text-dim); display:flex; align-ite
 
 /* ── Mirror ──────────────────────────────────────────── */
 #mirror {
-  /* MM CSS variable defaults — overridden by VisualConfig.js */
+  /* MM CSS variable defaults — overridden by custom.css */
   --color-text:        #999;
   --color-text-dimmed: #666;
   --color-text-bright: #fff;
@@ -516,11 +516,11 @@ label.ctl-label { font-size:12px; color:var(--text-dim); display:flex; align-ite
   <button class="btn primary" onclick="openConfigFile()">Load config.js</button>
   <button class="btn" id="btn-save-cfg" onclick="saveConfigFile()" style="display:none" title="Save edits back to Config.js">💾 Save Config</button>
   <div class="sep"></div>
-  <button class="btn" onclick="openVisualConfigFile()">Load VisualConfig.js</button>
-  <button class="btn" id="btn-save-vc" onclick="saveVisualConfigFile()" style="display:none" title="Save edits back to VisualConfig.js">💾 Save Visual</button>
+  <button class="btn" onclick="openVisualConfigFile()">Load custom.css</button>
+  <button class="btn" id="btn-save-vc" onclick="saveVisualConfigFile()" style="display:none" title="Save edits back to custom.css">💾 Save Visual</button>
   <!-- fallback inputs for browsers without File System Access API -->
   <input type="file" id="fi" accept=".js,.json" style="display:none">
-  <input type="file" id="vi" accept=".js" style="display:none">
+  <input type="file" id="vi" accept=".css" style="display:none">
   <select class="ctl" id="res" onchange="applyRes()">
     <option value="1920x1080">1920×1080 (Full HD)</option>
     <option value="1280x720">1280×720 (HD)</option>
@@ -550,7 +550,7 @@ label.ctl-label { font-size:12px; color:var(--text-dim); display:flex; align-ite
     <div id="sidebar-tabs">
       <div class="stab active" onclick="showTab('modules')">Modules</div>
       <div class="stab" onclick="showTab('cfg')">Config.js</div>
-      <div class="stab" onclick="showTab('vc')">VisualConfig</div>
+      <div class="stab" onclick="showTab('vc')">custom.css</div>
       <div class="stab" onclick="showTab('browse');initBrowse()">Browse</div>
       <div class="stab" onclick="showTab('raw')">JSON</div>
     </div>
@@ -566,7 +566,7 @@ label.ctl-label { font-size:12px; color:var(--text-dim); display:flex; align-ite
       </div>
 
       <div id="t-vc" style="display:none;height:calc(100vh - 105px);flex-direction:column">
-        <textarea id="vc-area" placeholder="Paste or load VisualConfig.js…" spellcheck="false"></textarea>
+        <textarea id="vc-area" placeholder="Paste or load custom.css…" spellcheck="false"></textarea>
         <div style="display:flex;gap:6px;margin-top:6px;flex-shrink:0">
           <button class="btn primary" style="flex:1" onclick="applyVCArea()">Apply</button>
           <button class="btn" style="flex:1" onclick="saveVisualConfigFile()" title="Write back to original file">💾 Save</button>
@@ -666,11 +666,11 @@ label.ctl-label { font-size:12px; color:var(--text-dim); display:flex; align-ite
 let cfg = null;
 let selIdx = null;
 let clockTimer = null;
-let currentVC = {};   // live copy of VisualConfig, updated on every apply
+let currentVC = {};   // live copy of custom.css values, updated on every apply
 let previewWidths  = {}; // per-module width overrides: key → px string
 let freePositions  = {}; // per-module free coords: key → { top, left }
 
-// Default values matching MagicMirror's main.css + VisualConfig.js template
+// Default values matching MagicMirror's main.css defaults
 const VC_DEFAULTS = {
   colorText:          '#999',
   colorTextDimmed:    '#666',
@@ -693,7 +693,7 @@ const VC_DEFAULTS = {
   calendarCellHeight: '130px',
 };
 
-// VisualConfig fields shown per module type in the Visual tab
+// Visual tab fields shown per module type (keys map to CSS vars via KEY_TO_CSS_VAR)
 const VC_MODULE_FIELDS = {
   clock: [
     { key: 'fontSizeXLarge',  label: 'Time size',        hint: 'e.g. 3.75rem' },
@@ -792,7 +792,7 @@ async function openVisualConfigFile() {
   if (FS_SUPPORTED) {
     try {
       const [handle] = await window.showOpenFilePicker({
-        types: [{ description: 'VisualConfig file', accept: { 'text/javascript': ['.js'] } }]
+        types: [{ description: 'custom.css', accept: { 'text/css': ['.css'] } }]
       });
       visualConfigFileHandle = handle;
       const file = await handle.getFile();
@@ -814,7 +814,7 @@ async function saveConfigFile() {
 async function saveVisualConfigFile() {
   const text = document.getElementById('vc-area').value;
   if (!text) return;
-  await saveText(text, visualConfigFileHandle, 'VisualConfig.js');
+  await saveText(text, visualConfigFileHandle, 'custom.css');
 }
 
 async function saveText(text, handle, fallbackName) {
@@ -828,11 +828,14 @@ async function saveText(text, handle, fallbackName) {
     } catch(e) { setStatus('Save failed: ' + e.message, 'err'); return; }
   }
   // Fallback: prompt Save As via showSaveFilePicker, else download
+  const isCSS = fallbackName.endsWith('.css');
   if (FS_SUPPORTED) {
     try {
       const newHandle = await window.showSaveFilePicker({
         suggestedName: fallbackName,
-        types: [{ description: 'JavaScript', accept: { 'text/javascript': ['.js'] } }]
+        types: isCSS
+          ? [{ description: 'CSS', accept: { 'text/css': ['.css'] } }]
+          : [{ description: 'JavaScript', accept: { 'text/javascript': ['.js'] } }]
       });
       const writable = await newHandle.createWritable();
       await writable.write(text);
@@ -842,7 +845,7 @@ async function saveText(text, handle, fallbackName) {
     } catch(e) { if (e.name === 'AbortError') return; }
   }
   // Last resort: browser download
-  const blob = new Blob([text], { type: 'text/javascript' });
+  const blob = new Blob([text], { type: isCSS ? 'text/css' : 'text/javascript' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = fallbackName; a.click();
@@ -857,12 +860,12 @@ function showSaveBtn(which, show) {
 
 function loadVisualConfigText(text, name) {
   try {
-    const vc = parseVisualConfig(text);
+    const vc = parseCustomCSS(text);
     applyVisualConfig(vc);
     document.getElementById('vc-area').value = text;
-    setStatus('VisualConfig loaded: ' + name, 'ok');
+    setStatus('custom.css loaded: ' + name, 'ok');
   } catch(e) {
-    setStatus('VisualConfig error: ' + e.message, 'err');
+    setStatus('custom.css error: ' + e.message, 'err');
   }
 }
 
@@ -872,7 +875,15 @@ document.addEventListener('drop', e => {
   e.preventDefault();
   document.getElementById('drop-overlay').classList.remove('on');
   const f = e.dataTransfer.files[0];
-  if (f) { const r = new FileReader(); r.onload = ev => processText(ev.target.result, f.name); r.readAsText(f); }
+  if (f) {
+    const r = new FileReader();
+    if (f.name.endsWith('.css')) {
+      r.onload = ev => { loadVisualConfigText(ev.target.result, f.name); showSaveBtn('vc', true); };
+    } else {
+      r.onload = ev => processText(ev.target.result, f.name);
+    }
+    r.readAsText(f);
+  }
 });
 
 
@@ -885,21 +896,49 @@ function applyVCArea() {
   const t = document.getElementById('vc-area').value.trim();
   if (!t) return;
   try {
-    const vc = parseVisualConfig(t);
+    const vc = parseCustomCSS(t);
     applyVisualConfig(vc);
-    setStatus('VisualConfig applied', 'ok');
-  } catch(e) { setStatus('VisualConfig error: ' + e.message, 'err'); }
+    setStatus('custom.css applied', 'ok');
+  } catch(e) { setStatus('custom.css error: ' + e.message, 'err'); }
 }
 
 // ══════════════════════════════════════════════════════════
-// VisualConfig parsing & applying
+// custom.css parsing & applying
 // ══════════════════════════════════════════════════════════
-function parseVisualConfig(text) {
-  const clean = text.replace(/if\s*\(typeof module[\s\S]*?;\s*$/m, '');
-  const fn = new Function('module','exports',
-    clean + '\nreturn typeof visualConfig!=="undefined"?visualConfig:null;');
-  const vc = fn({exports:{}},{});
-  if (!vc) throw new Error('No visualConfig object found');
+
+// Maps CSS variable names → camelCase VC keys
+const CSS_TO_KEY = {
+  '--color-text':        'colorText',
+  '--color-text-dimmed': 'colorTextDimmed',
+  '--color-text-bright': 'colorTextBright',
+  '--color-background':  'colorBackground',
+  '--font-primary':      'fontPrimary',
+  '--font-secondary':    'fontSecondary',
+  '--font-size':         'fontSize',
+  '--font-size-xsmall':  'fontSizeXSmall',
+  '--font-size-small':   'fontSizeSmall',
+  '--font-size-medium':  'fontSizeMedium',
+  '--font-size-large':   'fontSizeLarge',
+  '--font-size-xlarge':  'fontSizeXLarge',
+  '--gap-body-top':      'gapBodyTop',
+  '--gap-body-right':    'gapBodyRight',
+  '--gap-body-bottom':   'gapBodyBottom',
+  '--gap-body-left':     'gapBodyLeft',
+  '--gap-modules':       'gapModules',
+};
+// Reverse: camelCase VC key → CSS variable name
+const KEY_TO_CSS_VAR = Object.fromEntries(Object.entries(CSS_TO_KEY).map(([k,v]) => [v, k]));
+
+function parseCustomCSS(text) {
+  const vc = {};
+  // Parse all --var: value; declarations anywhere in the file
+  const varRegex = /(--[\w-]+)\s*:\s*([^;]+?)\s*;/g;
+  let match;
+  while ((match = varRegex.exec(text)) !== null) {
+    const key = CSS_TO_KEY[match[1]];
+    if (key) vc[key] = match[2].trim();
+  }
+  if (Object.keys(vc).length === 0) throw new Error('No recognised CSS variables found');
   return vc;
 }
 
@@ -907,28 +946,8 @@ function applyVisualConfig(vc) {
   currentVC = Object.assign(currentVC, vc);
   const mirror = document.getElementById('mirror');
 
-  // Map VisualConfig properties → MagicMirror CSS variables on the mirror element
-  const varMap = {
-    colorText:        '--color-text',
-    colorTextDimmed:  '--color-text-dimmed',
-    colorTextBright:  '--color-text-bright',
-    colorBackground:  '--color-background',
-    fontPrimary:      '--font-primary',
-    fontSecondary:    '--font-secondary',
-    fontSize:         '--font-size',
-    fontSizeXSmall:   '--font-size-xsmall',
-    fontSizeSmall:    '--font-size-small',
-    fontSizeMedium:   '--font-size-medium',
-    fontSizeLarge:    '--font-size-large',
-    fontSizeXLarge:   '--font-size-xlarge',
-    gapBodyTop:       '--gap-body-top',
-    gapBodyRight:     '--gap-body-right',
-    gapBodyBottom:    '--gap-body-bottom',
-    gapBodyLeft:      '--gap-body-left',
-    gapModules:       '--gap-modules',
-  };
-
-  Object.entries(varMap).forEach(([key, cssVar]) => {
+  // Apply CSS variables to the mirror element using KEY_TO_CSS_VAR map
+  Object.entries(KEY_TO_CSS_VAR).forEach(([key, cssVar]) => {
     if (vc[key] !== undefined) mirror.style.setProperty(cssVar, vc[key]);
   });
 
@@ -949,16 +968,6 @@ function applyVisualConfig(vc) {
     styleTag.textContent = css;
   }
 
-  // Apply visualizer resolution/zoom if specified
-  if (vc.resolution) {
-    const sel = document.getElementById('res');
-    if ([...sel.options].some(o => o.value === vc.resolution)) sel.value = vc.resolution;
-  }
-  if (vc.zoom !== undefined) {
-    const sel = document.getElementById('zoom');
-    const zStr = String(vc.zoom);
-    if ([...sel.options].some(o => o.value === zStr)) sel.value = zStr;
-  }
   applyRes();
 
   // Re-render if config is already loaded
@@ -1769,7 +1778,7 @@ function buildVisualTab(mod) {
   const hasVC = Object.keys(currentVC).length > 0;
 
   if (!hasVC) {
-    pane.innerHTML = '<div class="vf-no-vc">Load a VisualConfig.js to enable visual editing</div>';
+    pane.innerHTML = '<div class="vf-no-vc">Load a custom.css to enable visual editing</div>';
     return;
   }
 
@@ -1930,15 +1939,17 @@ function buildVCField(field) {
 function updateVCField(key, value) {
   currentVC[key] = value;
 
-  // Patch the vc-area text so the file stays in sync
+  // Patch the vc-area text so the CSS file stays in sync
   const area = document.getElementById('vc-area');
-  if (area.value) {
+  const cssVar = KEY_TO_CSS_VAR[key];
+  if (area.value && cssVar) {
+    // Replace:  --color-text: oldvalue;  →  --color-text: newvalue;
     const escaped = value.replace(/[\\$]/g, '\\$&');
-    area.value = area.value
-      // quoted string value:  key: "old"  or  key: 'old'
-      .replace(new RegExp(`(\\b${key}\\s*:\\s*)["'][^"'\\n]*["']`), `$1"${escaped}"`)
-      // numeric / bare value: key: 0.55
-      .replace(new RegExp(`(\\b${key}\\s*:\\s*)[^,\\n"'\\/]+`), `$1${escaped}`);
+    const varEscaped = cssVar.replace(/[-]/g, '\\-');
+    area.value = area.value.replace(
+      new RegExp(`(${varEscaped}\\s*:\\s*)[^;\\n]+`),
+      `$1${escaped}`
+    );
   }
 
   applyVisualConfig({ [key]: value });
