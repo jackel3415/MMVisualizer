@@ -8,15 +8,14 @@ A browser-based visual editor and live preview tool for [MagicMirror²](https://
 
 - **Live mirror preview** — see your layout at real resolution (e.g. 1920×1080), scaled to fit your browser window
 - **Load your own `Config.js`** — import an existing MagicMirror config and see it rendered instantly
-- **Load `VisualConfig.js`** — control colors, fonts, spacing, and calendar sizing with a dedicated style config
+- **Load `custom.css`** — load your MagicMirror style file directly to control colors, fonts, and spacing in the preview
 - **Live module rendering** — clock (with live tick), weather (current + 5-day via OpenWeatherMap), MMM-CalendarExt3 week grid, compliments, newsfeed
 - **Drag & drop between regions** — move modules between any of the 13 MagicMirror positions by dragging
 - **Free positioning** — toggle "Free Position" on any module to place it anywhere on the mirror with pixel precision; exports the CSS override needed for the Pi
 - **Resize handles** — drag the right edge, bottom edge, or corner of any module to resize it visually
 - **Per-module Visual tab** — click any module to open a detail panel with its config fields and visual style controls (font size, cell height, width, etc.)
 - **Module browser** — search GitHub for MagicMirror community modules and drag them directly into your layout
-- **Save to file** — save changes back to your original `Config.js` and `VisualConfig.js` on disk (uses the File System Access API; falls back to download)
-- **Export custom.css** — copy the `:root` CSS variable block to paste into your Pi's `custom.css`
+- **Save to file** — save changes back to your original `Config.js` and `custom.css` on disk (uses the File System Access API; falls back to download)
 - **Delete modules** — select a module on the preview and press `Delete` to remove it
 - **Collapsible sidebar** — press ☰ to hide the sidebar and see the full mirror preview
 
@@ -41,7 +40,7 @@ A browser-based visual editor and live preview tool for [MagicMirror²](https://
 3. **Load your config files** (optional)
 
    - Click **Load Config.js** and select your MagicMirror `Config.js`
-   - Click **Load VisualConfig.js** and select your `VisualConfig.js`
+   - Click **Load custom.css** and select your `MagicMirror/config/custom.css`
 
    If you don't have existing files, the visualizer loads with a built-in default config.
 
@@ -55,8 +54,7 @@ A browser-based visual editor and live preview tool for [MagicMirror²](https://
 5. **Save your changes**
 
    - Click **Save Config.js** to write back to disk
-   - Click **Save VisualConfig.js** to write back to disk
-   - Copy the CSS block from the **VisualConfig** tab into your Pi's `MagicMirror/config/custom.css`
+   - Click **Save Visual** to write back to your `custom.css` on disk
 
 ---
 
@@ -66,7 +64,7 @@ A browser-based visual editor and live preview tool for [MagicMirror²](https://
 |---|---|
 | `MMVisualizer.html` | The entire application — open this in your browser |
 | `Config.sample.js` | Example MagicMirror config with placeholder values — copy to `Config.js` and fill in your own |
-| `VisualConfig.js` | Visual style settings (colors, fonts, spacing, calendar sizing) |
+| `custom.css` | Visual style settings (colors, fonts, spacing) — mirrors the file MagicMirror reads on the Pi |
 | `LICENSE` | MIT License |
 
 ---
@@ -89,33 +87,29 @@ Then edit `Config.js`:
 
 ---
 
-## VisualConfig.js Reference
+## custom.css Reference
 
-`VisualConfig.js` controls both the visualizer preview and the Pi's `custom.css`. After editing in the visualizer, copy the generated CSS block into `MagicMirror/config/custom.css` on your Pi.
+`custom.css` is the same file MagicMirror reads on the Pi. Load it into the visualizer to preview your styles, edit via the Visual tab, and save it back — no extra conversion step needed.
 
-| Property | Default | Description |
+| CSS Variable | Default | Description |
 |---|---|---|
-| `colorText` | `#999` | Default module text color |
-| `colorTextDimmed` | `#666` | Secondary / subdued text |
-| `colorTextBright` | `#fff` | Highlighted / primary text |
-| `colorBackground` | `#000` | Mirror background |
-| `fontPrimary` | `Roboto Condensed` | Main font family |
-| `fontSecondary` | `Roboto` | Secondary font (thin/light weights) |
-| `fontSize` | `20px` | Root font size (1rem = this value) |
-| `fontSizeXSmall` | `0.75rem` | Extra small text |
-| `fontSizeSmall` | `1rem` | Small text |
-| `fontSizeMedium` | `1.5rem` | Medium text |
-| `fontSizeLarge` | `3.25rem` | Large text (e.g. clock time) |
-| `fontSizeXLarge` | `3.75rem` | Extra large text |
-| `gapBodyTop` | `60px` | Mirror frame margin — top |
-| `gapBodyRight` | `60px` | Mirror frame margin — right |
-| `gapBodyBottom` | `60px` | Mirror frame margin — bottom |
-| `gapBodyLeft` | `60px` | Mirror frame margin — left |
-| `gapModules` | `30px` | Vertical gap between stacked modules |
-| `calendarFontSize` | `20px` | MMM-CalendarExt3 grid font size |
-| `calendarCellHeight` | `113px` | MMM-CalendarExt3 day cell min-height |
-| `resolution` | `1920x1080` | Preview resolution preset (visualizer only) |
-| `zoom` | `0.55` | Preview zoom level 0.35–1.0 (visualizer only) |
+| `--color-text` | `#999` | Default module text color |
+| `--color-text-dimmed` | `#666` | Secondary / subdued text |
+| `--color-text-bright` | `#fff` | Highlighted / primary text |
+| `--color-background` | `#000` | Mirror background |
+| `--font-primary` | `Roboto Condensed` | Main font family |
+| `--font-secondary` | `Roboto` | Secondary font (thin/light weights) |
+| `--font-size` | `20px` | Root font size (1rem = this value) |
+| `--font-size-xsmall` | `0.75rem` | Extra small text |
+| `--font-size-small` | `1rem` | Small text |
+| `--font-size-medium` | `1.5rem` | Medium text |
+| `--font-size-large` | `3.25rem` | Large text (e.g. clock time) |
+| `--font-size-xlarge` | `3.75rem` | Extra large text |
+| `--gap-body-top` | `60px` | Mirror frame margin — top |
+| `--gap-body-right` | `60px` | Mirror frame margin — right |
+| `--gap-body-bottom` | `60px` | Mirror frame margin — bottom |
+| `--gap-body-left` | `60px` | Mirror frame margin — left |
+| `--gap-modules` | `30px` | Vertical gap between stacked modules |
 
 ---
 
@@ -146,7 +140,7 @@ The **Free Position** toggle (in a module's Visual tab) lets you drag a module a
 
 1. The module appears as a floating overlay on the preview
 2. Drag it to any position
-3. The **VisualConfig** tab shows the generated CSS override
+3. The **custom.css** tab shows the generated CSS override
 4. Copy that CSS into your Pi's `custom.css`, and add the generated class name to the module's `classes` field in `Config.js`
 
 Example output:
@@ -186,7 +180,7 @@ The **Browse** tab searches GitHub for community MagicMirror modules tagged with
 
 1. Save your updated `Config.js` via the visualizer
 2. Copy `Config.js` to `~/MagicMirror/config/config.js` on your Pi
-3. Copy the `:root { ... }` CSS block from the VisualConfig tab into `~/MagicMirror/config/custom.css`
+3. Save `custom.css` via the visualizer and copy it to `~/MagicMirror/config/custom.css` on your Pi
 4. If using free positioning, also copy the generated `.free-*` CSS rules into `custom.css`
 5. Restart MagicMirror:
    ```bash
