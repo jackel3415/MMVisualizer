@@ -535,7 +535,9 @@ label.ctl-label { font-size:12px; color:var(--text-dim); display:flex; align-ite
     <option value=".7">70%</option>
     <option value="1">100%</option>
   </select>
-  <label class="ctl-label"><input type="checkbox" id="showdis" onchange="render()" checked> Show disabled</label>
+  <label class="ctl-label"><input type="checkbox" id="showdis" onchange="savePrefs();render()" checked> Show disabled</label>
+  <button class="btn" onclick="undo()" title="Undo (Ctrl+Z)">↶</button>
+  <button class="btn" onclick="redo()" title="Redo (Ctrl+Shift+Z)">↷</button>
   <button class="btn" onclick="refreshLive()" title="Re-fetch live data">↻ Refresh</button>
   <div class="sep"></div>
   <span id="status">Drop a config.js file anywhere, or click "Load config.js"</span>
@@ -808,7 +810,7 @@ async function openVisualConfigFile() {
 async function saveConfigFile() {
   const text = document.getElementById('cfg-area').value;
   if (!text) return;
-  await saveText(text, configFileHandle, 'Config.js');
+  if (await saveText(text, configFileHandle, 'Config.js')) clearDirty();
 }
 
 async function saveVisualConfigFile() {
@@ -824,8 +826,8 @@ async function saveText(text, handle, fallbackName) {
       await writable.write(text);
       await writable.close();
       setStatus('Saved to ' + (await handle.getFile()).name, 'ok');
-      return;
-    } catch(e) { setStatus('Save failed: ' + e.message, 'err'); return; }
+      return true;
+    } catch(e) { setStatus('Save failed: ' + e.message, 'err'); return false; }
   }
   // Fallback: prompt Save As via showSaveFilePicker, else download
   const isCSS = fallbackName.endsWith('.css');
@@ -841,8 +843,8 @@ async function saveText(text, handle, fallbackName) {
       await writable.write(text);
       await writable.close();
       setStatus('Saved as ' + fallbackName, 'ok');
-      return;
-    } catch(e) { if (e.name === 'AbortError') return; }
+      return true;
+    } catch(e) { if (e.name === 'AbortError') return false; }
   }
   // Last resort: browser download
   const blob = new Blob([text], { type: isCSS ? 'text/css' : 'text/javascript' });
@@ -851,6 +853,7 @@ async function saveText(text, handle, fallbackName) {
   a.href = url; a.download = fallbackName; a.click();
   URL.revokeObjectURL(url);
   setStatus('Downloaded ' + fallbackName + ' (no file handle — re-load file to enable direct save)', '');
+  return true;
 }
 
 function showSaveBtn(which, show) {
@@ -983,6 +986,7 @@ function processText(text, src) {
     document.getElementById('cfg-area').value = text;
     setStatus('Loaded: ' + src, 'ok');
     render();
+    resetHistory();
   } catch(e) {
     setStatus('Parse error: ' + e.message, 'err');
     console.error(e);
@@ -1042,7 +1046,9 @@ function render() {
   if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
 
   const showDis = document.getElementById('showdis').checked;
-  const modules = (cfg.modules || []).filter(m => showDis || !m.disabled);
+  // Keep each module's index into cfg.modules so selection/move/delete hit the right one
+  const entries = (cfg.modules || []).map((m, i) => ({ m, i })).filter(e => showDis || !e.m.disabled);
+  const modules = entries.map(e => e.m);
 
   document.getElementById('empty').style.display = 'none';
 
@@ -1057,7 +1063,7 @@ function render() {
   });
 
   // Place modules — skip free-positioned ones (they go on the overlay)
-  modules.forEach((mod, i) => {
+  entries.forEach(({ m: mod, i }) => {
     if (freePositions[widthKey(mod)]) return;
     const pos = mod.position;
     const el = pos && document.getElementById('region-' + pos);
@@ -1070,7 +1076,7 @@ function render() {
   // Place free-positioned modules on the overlay
   const freeLayer = document.getElementById('free-layer');
   freeLayer.innerHTML = '';
-  modules.forEach((mod, i) => {
+  entries.forEach(({ m: mod, i }) => {
     const fp = freePositions[widthKey(mod)];
     if (!fp) return;
     const wrap = buildWrap(mod, i);
@@ -1081,7 +1087,7 @@ function render() {
   });
 
   // Sidebar
-  renderList(modules);
+  renderList(entries);
   document.getElementById('raw-json').textContent = JSON.stringify(cfg, null, 2);
 
   const b = document.getElementById('badge');
@@ -1091,7 +1097,7 @@ function render() {
   startClock(modules);
 
   // Fetch weather for all weather modules
-  modules.forEach((mod, i) => {
+  entries.forEach(({ m: mod, i }) => {
     if (mod.module === 'weather') fetchWeather(mod, i);
   });
 
@@ -1711,18 +1717,19 @@ function buildPlaceholder(mod) {
 // ══════════════════════════════════════════════════════════
 // Sidebar module list
 // ══════════════════════════════════════════════════════════
-function renderList(modules) {
+function renderList(entries) {
   const list = document.getElementById('t-modules');
   list.innerHTML = '';
-  if (!modules.length) {
+  if (!entries.length) {
     list.innerHTML = '<div style="color:var(--text-dimmer);font-size:12px;padding:4px">No modules.</div>';
     return;
   }
-  modules.forEach((mod, i) => {
+  entries.forEach(({ m: mod, i }) => {
     const e = document.createElement('div');
+    e.dataset.idx = i;
     e.className = 'mod-entry' + (mod.disabled ? ' dis' : '') + (selIdx === i ? ' sel' : '');
-    e.innerHTML = `<div class="mod-name">${mod.module||'(unnamed)'}</div>
-      <div class="mod-pos${mod.position?'':' np'}">${mod.position||'background (no position)'}</div>`;
+    e.innerHTML = `<div class="mod-name">${escHtml(mod.module||'(unnamed)')}</div>
+      <div class="mod-pos${mod.position?'':' np'}">${escHtml(mod.position||'background (no position)')}</div>`;
     e.addEventListener('click', () => selectMod(i));
     list.appendChild(e);
   });
@@ -1734,7 +1741,7 @@ function renderList(modules) {
 function selectMod(idx) {
   selIdx = idx;
   document.querySelectorAll('.mm-wrap').forEach(el => el.classList.toggle('sel', +el.dataset.idx === idx));
-  document.querySelectorAll('.mod-entry').forEach((el, i) => el.classList.toggle('sel', i === idx));
+  document.querySelectorAll('.mod-entry').forEach(el => el.classList.toggle('sel', +el.dataset.idx === idx));
   const mod = (cfg?.modules || [])[idx];
   if (mod) showDetail(mod);
 }
@@ -1991,15 +1998,37 @@ function deleteSelectedModule() {
   closeDetail();
   updateConfigArea();
   render();
-  setStatus(`Deleted "${mod.module}" — click 💾 Save to write to disk`, '');
+  setStatus(`Deleted "${mod.module}" — Ctrl+Z to undo, Ctrl+S to save`, '');
 }
 
 // Delete key removes the selected module (guards against firing inside inputs)
+let nudgeTimer = null;
 document.addEventListener('keydown', e => {
-  if (e.key !== 'Delete' && e.key !== 'Backspace') return;
   const tag = document.activeElement?.tagName;
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-  deleteSelectedModule();
+  const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+  const ctrl = e.ctrlKey || e.metaKey;
+  if (ctrl && e.key.toLowerCase() === 's') { e.preventDefault(); saveConfigFile(); return; }
+  if (typing) return;
+  if (ctrl && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if (ctrl && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
+  if (e.key === 'Escape') { closeDetail(); return; }
+  if (e.key === 'Delete') { deleteSelectedModule(); return; }
+  // Arrow keys nudge a free-positioned module (Shift = 10px)
+  if (e.key.startsWith('Arrow') && selIdx !== null && cfg?.modules[selIdx]) {
+    const fp = freePositions[widthKey(cfg.modules[selIdx])];
+    if (!fp) return;
+    e.preventDefault();
+    const d = e.shiftKey ? 10 : 1;
+    if (e.key === 'ArrowUp')    fp.top  = Math.max(0, fp.top  - d);
+    if (e.key === 'ArrowDown')  fp.top  += d;
+    if (e.key === 'ArrowLeft')  fp.left = Math.max(0, fp.left - d);
+    if (e.key === 'ArrowRight') fp.left += d;
+    const w = document.querySelector(`#free-layer .mm-wrap[data-idx="${selIdx}"]`);
+    if (w) { w.style.top = fp.top + 'px'; w.style.left = fp.left + 'px'; }
+    syncVCPanelField('__free_top',  fp.top  + 'px');
+    syncVCPanelField('__free_left', fp.left + 'px');
+    clearTimeout(nudgeTimer); nudgeTimer = setTimeout(() => { snapshot(); markDirty(); }, 400);
+  }
 });
 
 // ══════════════════════════════════════════════════════════
@@ -2089,41 +2118,39 @@ function setupMirrorDrop() {
 // Config serialization — write cfg object back to JS text
 // ══════════════════════════════════════════════════════════
 function serializeConfig(c) {
-  function fmtVal(v) {
-    if (typeof v === 'string') return `"${v.replace(/"/g, '\\"')}"`;
-    if (Array.isArray(v)) return JSON.stringify(v);
-    return JSON.stringify(v);
-  }
+  const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
+  const keyFmt = k => /^[A-Za-z_$][\w$]*$/.test(k) ? k : JSON.stringify(k);
+  const fmtVal = v => JSON.stringify(v);   // escapes quotes, backslashes, newlines
   function fmtObj(obj, depth) {
     const pad = '  '.repeat(depth);
-    const inner = Object.entries(obj).map(([k, v]) => {
-      const val = (v !== null && typeof v === 'object' && !Array.isArray(v))
-        ? fmtObj(v, depth + 1)
-        : fmtVal(v);
-      return `${pad}  ${k}: ${val}`;
-    }).join(',\n');
+    const inner = Object.entries(obj).map(([k, v]) =>
+      `${pad}  ${keyFmt(k)}: ${isObj(v) ? fmtObj(v, depth + 1) : fmtVal(v)}`).join(',\n');
     return `{\n${inner}\n${pad}}`;
   }
 
+  // Preserve every top-level key, not just a fixed list
+  const TOP_FIRST = ['address','port','basePath','ipWhitelist','useHttps','language','locale','logLevel','timeFormat','units'];
+  const topKeys = [...TOP_FIRST.filter(k => c[k] !== undefined),
+                   ...Object.keys(c).filter(k => k !== 'modules' && !TOP_FIRST.includes(k))];
   const top = ['let config = {'];
-  ['address','port','basePath','language','locale','logLevel','timeFormat','units'].forEach(k => {
-    if (c[k] === undefined) return;
-    top.push(`  ${k}: ${fmtVal(c[k])},`);
-  });
+  topKeys.forEach(k => top.push(`  ${keyFmt(k)}: ${isObj(c[k]) ? fmtObj(c[k], 1) : fmtVal(c[k])},`));
 
+  // Preserve every module key too (order, animateIn, etc.)
+  const MOD_FIRST = ['module','position','header','disabled','classes'];
   top.push('', '  modules: [');
   (c.modules || []).forEach((m, i) => {
     const last = i === c.modules.length - 1;
-    const lines = ['    {', `      module: "${m.module}",`];
-    if (m.position)  lines.push(`      position: "${m.position}",`);
-    if (m.header)    lines.push(`      header: "${m.header}",`);
-    if (m.disabled)  lines.push(`      disabled: true,`);
-    if (m.classes)   lines.push(`      classes: "${m.classes}",`);
-    if (m.config && Object.keys(m.config).length) {
-      const cfg2 = fmtObj(m.config, 3).split('\n')
-        .map((l, i2) => i2 === 0 ? l : '      ' + l).join('\n');
-      lines.push(`      config: ${cfg2},`);
-    }
+    const keys = [...MOD_FIRST.filter(k => m[k] !== undefined && m[k] !== false),
+                  ...Object.keys(m).filter(k => !MOD_FIRST.includes(k))];
+    const lines = ['    {'];
+    keys.forEach(k => {
+      if (k === 'config' && !(m.config && Object.keys(m.config).length)) return;
+      const v = m[k];
+      const txt = isObj(v)
+        ? fmtObj(v, 3).split('\n').map((l, j) => j === 0 ? l : '      ' + l).join('\n')
+        : fmtVal(v);
+      lines.push(`      ${keyFmt(k)}: ${txt},`);
+    });
     lines.push(`    }${last ? '' : ','}`);
     top.push(lines.join('\n'));
   });
@@ -2134,10 +2161,48 @@ function serializeConfig(c) {
   return top.join('\n');
 }
 
-function updateConfigArea() {
+function updateConfigArea(noSnap) {
   if (!cfg) return;
   document.getElementById('cfg-area').value = serializeConfig(cfg);
+  if (!noSnap) { snapshot(); markDirty(); }
 }
+
+// ══════════════════════════════════════════════════════════
+// Undo / redo + unsaved-changes tracking
+// ══════════════════════════════════════════════════════════
+const hist = { stack: [], pos: -1 };
+let dirty = false;
+const BASE_TITLE = document.title;
+
+function snapshot() {
+  if (!cfg) return;
+  const s = JSON.stringify({ cfg, free: freePositions });
+  if (hist.stack[hist.pos] === s) return;
+  hist.stack.length = hist.pos + 1;
+  hist.stack.push(s);
+  if (hist.stack.length > 100) hist.stack.shift();
+  hist.pos = hist.stack.length - 1;
+}
+function resetHistory() { hist.stack = []; hist.pos = -1; snapshot(); clearDirty(); }
+function restoreSnapshot(s) {
+  const o = JSON.parse(s);
+  cfg = o.cfg; freePositions = o.free;
+  updateConfigArea(true);
+  render();
+  if (selIdx !== null && cfg.modules[selIdx]) showDetail(cfg.modules[selIdx]); else closeDetail();
+  markDirty();
+}
+function undo() {
+  if (hist.pos <= 0) { setStatus('Nothing to undo', ''); return; }
+  restoreSnapshot(hist.stack[--hist.pos]); setStatus('Undo', 'ok');
+}
+function redo() {
+  if (hist.pos >= hist.stack.length - 1) { setStatus('Nothing to redo', ''); return; }
+  restoreSnapshot(hist.stack[++hist.pos]); setStatus('Redo', 'ok');
+}
+function markDirty()  { dirty = true;  document.title = '• ' + BASE_TITLE; }
+function clearDirty() { dirty = false; document.title = BASE_TITLE; }
+window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 
 // ══════════════════════════════════════════════════════════
 // Module browser — GitHub module registry
@@ -2292,6 +2357,7 @@ function toggleFreePosition(mod, enable) {
   } else {
     delete freePositions[key];
   }
+  snapshot(); markDirty();
   render();
   // Re-open detail panel on the same module
   if (cfg && selIdx !== null) showDetail(cfg.modules[selIdx]);
@@ -2322,6 +2388,7 @@ function enableFreeDrag(wrap, mod) {
     function onUp() {
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup',   onUp);
+      snapshot(); markDirty();
     }
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup',   onUp);
@@ -2447,7 +2514,28 @@ function syncVCPanelField(key, value) {
 // ══════════════════════════════════════════════════════════
 // Resolution / zoom
 // ══════════════════════════════════════════════════════════
+const PREF_KEY = 'mmv-prefs';
+function savePrefs() {
+  try {
+    localStorage.setItem(PREF_KEY, JSON.stringify({
+      res: document.getElementById('res').value,
+      zoom: document.getElementById('zoom').value,
+      showdis: document.getElementById('showdis').checked,
+      collapsed: document.getElementById('sidebar').classList.contains('collapsed'),
+    }));
+  } catch (e) {}
+}
+function loadPrefs() {
+  try {
+    const p = JSON.parse(localStorage.getItem(PREF_KEY) || 'null'); if (!p) return;
+    const setIf = (id, v) => { const el = document.getElementById(id); if ([...el.options].some(o => o.value === v)) el.value = v; };
+    setIf('res', p.res); setIf('zoom', p.zoom);
+    if (typeof p.showdis === 'boolean') document.getElementById('showdis').checked = p.showdis;
+    if (p.collapsed) toggleSidebar();
+  } catch (e) {}
+}
 function applyRes() {
+  savePrefs();
   const [w, h] = document.getElementById('res').value.split('x').map(Number);
   const z = parseFloat(document.getElementById('zoom').value);
   const m = document.getElementById('mirror');
@@ -2464,6 +2552,7 @@ function toggleSidebar() {
   const sb = document.getElementById('sidebar');
   sb.classList.toggle('collapsed');
   document.getElementById('sidebar-toggle').textContent = sb.classList.contains('collapsed') ? '▶' : '☰';
+  savePrefs();
 }
 
 // ══════════════════════════════════════════════════════════
@@ -2477,6 +2566,7 @@ function setStatus(msg, cls) {
 // ══════════════════════════════════════════════════════════
 // Init
 // ══════════════════════════════════════════════════════════
+loadPrefs();
 applyRes();
 
 // Demo config so the mirror isn't blank

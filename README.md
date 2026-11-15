@@ -17,6 +17,10 @@ A browser-based visual editor and live preview tool for [MagicMirror²](https://
 - **Module browser** — search GitHub for MagicMirror community modules and drag them directly into your layout
 - **Save to file** — save changes back to your original `Config.js` and `custom.css` on disk (uses the File System Access API; falls back to download)
 - **Delete modules** — select a module on the preview and press `Delete` to remove it
+- **Undo / redo** — `Ctrl+Z` / `Ctrl+Shift+Z` (or the ↶ ↷ buttons) cover moves, deletes, adds and free-position changes
+- **Shortcuts** — `Ctrl+S` save, `Delete` remove module, `Esc` close panel, arrow keys nudge a free-positioned module (`Shift` = 10px)
+- **Unsaved-changes guard** — tab title shows `•` and the browser warns before closing with unsaved edits
+- **Remembers your view** — resolution, zoom, show-disabled and sidebar state persist between sessions
 - **Collapsible sidebar** — press ☰ to hide the sidebar and see the full mirror preview
 
 ---

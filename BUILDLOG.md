@@ -1,5 +1,15 @@
 # MMVisualizer Build Log
 
+## 2026-11-15 — Quality-of-life pass
+
+- Fixed: with "Show disabled" off, selecting/moving/deleting a module acted on the wrong one (filtered index used against `cfg.modules`)
+- Added undo/redo (100 steps), Ctrl+S / Ctrl+Z / Ctrl+Y / Esc, arrow-key nudge for free-positioned modules
+- Removed Backspace-deletes-module (too easy to trigger by accident); Delete remains, and is undoable
+- Unsaved-changes marker in the tab title plus a beforeunload warning
+- Preferences (resolution, zoom, show disabled, sidebar) persist in localStorage
+- Config serializer now keeps unknown top-level and per-module keys and escapes strings properly
+- Module names/positions in the sidebar list are HTML-escaped
+
 ---
 
 ## 2026-04-02 — Public repo prep
