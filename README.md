@@ -4,6 +4,18 @@ A browser-based visual editor and live preview tool for [MagicMirror²](https://
 
 ---
 
+## Screenshots
+
+Sample data (made-up weather, calendar events and headlines), 1920×1080 preview.
+
+![Overview — clock, weather, compliments, calendar and news laid out on the mirror](docs/overview.png)
+
+Click any module to open its detail panel (Config and Visual tabs):
+
+![Detail panel for a selected module](docs/module-panel.png)
+
+---
+
 ## Features
 
 - **Live mirror preview** — see your layout at real resolution (e.g. 1920×1080), scaled to fit your browser window
