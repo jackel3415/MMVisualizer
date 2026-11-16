@@ -1,5 +1,16 @@
 # MMVisualizer Build Log
 
+## 2026-11-15 — custom.css + repeated modules
+
+- Fixed: loading a `custom.css` with normal rules but none of the 19 known `--variables` failed with "No recognised CSS variables". Any valid file now loads
+- custom.css rules (`.clock`, `.MMM-xxx`, `body`, `:root`, `@font-face`, `@import`) are now applied to the preview, scoped to the mirror so the editor UI is untouched
+- Module wrappers now carry MagicMirror's real classes (`module <name> <classes>`) so custom.css selectors match
+- Fixed: modules used more than once shared one width / free position. Each entry now has a hidden id (never written to Config.js); width also survives moving a module between regions
+- Free-position CSS export gives repeated modules distinct class names (`free-clock`, `free-clock-2`)
+- Known gap: MMM-Carousel / MMM-Scenes2 rotation is not modelled yet (all rotating modules are drawn at once); most third-party modules show as labelled placeholders
+
+---
+
 ## 2026-11-15 — Quality-of-life pass
 
 - Fixed: with "Show disabled" off, selecting/moving/deleting a module acted on the wrong one (filtered index used against `cfg.modules`)

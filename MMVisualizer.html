@@ -865,8 +865,9 @@ function loadVisualConfigText(text, name) {
   try {
     const vc = parseCustomCSS(text);
     applyVisualConfig(vc);
+    setRawCustomCSS(text);
     document.getElementById('vc-area').value = text;
-    setStatus('custom.css loaded: ' + name, 'ok');
+    setStatus('custom.css loaded: ' + name + ' (' + Object.keys(vc).length + ' known variables, all rules applied to preview)', 'ok');
   } catch(e) {
     setStatus('custom.css error: ' + e.message, 'err');
   }
@@ -901,7 +902,8 @@ function applyVCArea() {
   try {
     const vc = parseCustomCSS(t);
     applyVisualConfig(vc);
-    setStatus('custom.css applied', 'ok');
+    setRawCustomCSS(t);
+    setStatus('custom.css applied (' + Object.keys(vc).length + ' known variables, all rules applied to preview)', 'ok');
   } catch(e) { setStatus('custom.css error: ' + e.message, 'err'); }
 }
 
@@ -941,8 +943,39 @@ function parseCustomCSS(text) {
     const key = CSS_TO_KEY[match[1]];
     if (key) vc[key] = match[2].trim();
   }
-  if (Object.keys(vc).length === 0) throw new Error('No recognised CSS variables found');
-  return vc;
+  return vc;   // may be empty: a file with only normal rules is still valid
+}
+
+// Scope the user's custom.css to the preview so .module / body / :root rules apply
+// to the mirror without restyling the editor UI itself.
+function scopeCustomCSS(text) {
+  text = text.replace(/\/\*[\s\S]*?\*\//g, '');
+  const hoisted = [];
+  text = text.replace(/@import[^;]+;/g, m => { hoisted.push(m); return ''; });
+  // @font-face / @keyframes cannot be nested, so lift them out (balanced braces)
+  const re = /@(?:font-face|(?:-webkit-)?keyframes)\b/g;
+  let out = '', last = 0, m;
+  while ((m = re.exec(text)) !== null) {
+    const open = text.indexOf('{', m.index);
+    if (open < 0) break;
+    let depth = 0, i = open;
+    for (; i < text.length; i++) {
+      if (text[i] === '{') depth++;
+      else if (text[i] === '}' && --depth === 0) break;
+    }
+    hoisted.push(text.slice(m.index, i + 1));
+    out += text.slice(last, m.index);
+    last = re.lastIndex = i + 1;
+  }
+  out += text.slice(last);
+  out = out.replace(/(^|[},;{\s])(:root|html|body)(?=[\s,{.:\[#>+~])/g, '$1&');
+  return hoisted.join('\n') + '\n#mirror {\n' + out + '\n}';
+}
+
+function setRawCustomCSS(text) {
+  let tag = document.getElementById('vc-raw');
+  if (!tag) { tag = document.createElement('style'); tag.id = 'vc-raw'; document.head.appendChild(tag); }
+  tag.textContent = text ? scopeCustomCSS(text) : '';
 }
 
 function applyVisualConfig(vc) {
@@ -983,6 +1016,7 @@ function applyVisualConfig(vc) {
 function processText(text, src) {
   try {
     cfg = parseConfig(text);
+    ensureIds(cfg);
     document.getElementById('cfg-area').value = text;
     setStatus('Loaded: ' + src, 'ok');
     render();
@@ -1088,7 +1122,7 @@ function render() {
 
   // Sidebar
   renderList(entries);
-  document.getElementById('raw-json').textContent = JSON.stringify(cfg, null, 2);
+  document.getElementById('raw-json').textContent = JSON.stringify(cfg, (k, v) => k.startsWith('_mmv') ? undefined : v, 2);
 
   const b = document.getElementById('badge');
   b.style.display = 'inline'; b.textContent = modules.length + ' modules';
@@ -1109,7 +1143,9 @@ function render() {
 // ══════════════════════════════════════════════════════════
 function buildWrap(mod, idx) {
   const wrap = document.createElement('div');
-  wrap.className = 'mm-wrap' + (mod.disabled ? ' dis' : '') + (selIdx === idx ? ' sel' : '');
+  wrap.className = 'mm-wrap module ' + String(mod.module || '').replace(/[^\w-]/g, '') +
+    (mod.classes ? ' ' + String(mod.classes).replace(/[^\w\s-]/g, '') : '') +
+    (mod.disabled ? ' dis' : '') + (selIdx === idx ? ' sel' : '');
   wrap.dataset.idx = idx;
   wrap.style.position = 'relative';
   wrap.addEventListener('click', () => selectMod(idx));
@@ -1863,8 +1899,20 @@ function buildWidthField(mod) {
   return wrap;
 }
 
+// Each module entry gets a hidden _mmvId so repeated modules (e.g. three clocks, or
+// MMM-CalendarExt3 used twice) keep separate widths / free positions, and moving a
+// module to another region no longer drops its width. Never written to Config.js.
+let mmvIdSeq = 0;
+function ensureIds(c) {
+  (c?.modules || []).forEach(m => { if (!m._mmvId) m._mmvId = 'm' + (++mmvIdSeq); });
+  const seen = new Set();
+  (c?.modules || []).forEach(m => {   // pasted/duplicated ids -> make unique
+    if (seen.has(m._mmvId)) m._mmvId = 'm' + (++mmvIdSeq);
+    seen.add(m._mmvId);
+  });
+}
 function widthKey(mod) {
-  return `${mod.module}:${mod.position || ''}:${mod.header || ''}`;
+  return `${mod.module}#${mod._mmvId || (mod.position || '') + ':' + (mod.header || '')}`;
 }
 
 function setModuleWidth(mod, val) {
@@ -2106,6 +2154,7 @@ function setupMirrorDrop() {
     } else if (data.type === 'new') {
       // Add new module from browser
       cfg.modules.push({ module: data.name, position: regionName, config: {} });
+      ensureIds(cfg);
       setStatus(`Added "${data.name}" → ${regionName} — edit config in the detail panel`, 'ok');
     }
 
@@ -2141,7 +2190,7 @@ function serializeConfig(c) {
   (c.modules || []).forEach((m, i) => {
     const last = i === c.modules.length - 1;
     const keys = [...MOD_FIRST.filter(k => m[k] !== undefined && m[k] !== false),
-                  ...Object.keys(m).filter(k => !MOD_FIRST.includes(k))];
+                  ...Object.keys(m).filter(k => !MOD_FIRST.includes(k) && !k.startsWith('_mmv'))];
     const lines = ['    {'];
     keys.forEach(k => {
       if (k === 'config' && !(m.config && Object.keys(m.config).length)) return;
@@ -2187,6 +2236,7 @@ function resetHistory() { hist.stack = []; hist.pos = -1; snapshot(); clearDirty
 function restoreSnapshot(s) {
   const o = JSON.parse(s);
   cfg = o.cfg; freePositions = o.free;
+  ensureIds(cfg);
   updateConfigArea(true);
   render();
   if (selIdx !== null && cfg.modules[selIdx]) showDetail(cfg.modules[selIdx]); else closeDetail();
@@ -2398,12 +2448,15 @@ function enableFreeDrag(wrap, mod) {
 function generateFreeCSS() {
   const lines = ['/* Free-positioned modules — paste into MagicMirror/config/custom.css */'];
   let hasAny = false;
+  const nth = {};
   (cfg?.modules || []).forEach(mod => {
     const key = widthKey(mod);
+    const base = 'free-' + mod.module.replace(/[^a-zA-Z0-9]/g,'-').toLowerCase();
+    nth[base] = (nth[base] || 0) + 1;
     const fp  = freePositions[key];
     if (!fp) return;
     hasAny = true;
-    const cls = 'free-' + mod.module.replace(/[^a-zA-Z0-9]/g,'-').toLowerCase();
+    const cls = nth[base] > 1 ? base + '-' + nth[base] : base;
     lines.push('');
     lines.push(`/* Add  classes: "${cls}"  to the "${mod.module}" module in Config.js */`);
     lines.push(`.${cls} {`);
