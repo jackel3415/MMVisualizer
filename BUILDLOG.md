@@ -1,5 +1,18 @@
 # MMVisualizer Build Log
 
+## 2026-11-19 — scene-based config compatibility
+
+- Fixed JavaScript config serialization and undo/redo so functions inside nested objects and arrays survive visual edits and downloaded exports. Config and CSS track unsaved changes independently.
+- Added native-style MagicMirror regions, module headers and CalendarExt3/Agenda markup. CSS is parsed by the browser and scoped per rule; unmatched closing braces are repaired and reported without leaking later rules into the editor.
+- Added Open-Meteo current/hourly/daily weather, shared named calendar feeds, day/week/month views, Agenda, legends, weather temperatures and iCalendar recurrence/exception/timezone handling through bundled ICAL.js.
+- Added Scenes2 and positional/global/slides Carousel selection and play/pause controls. Role classes missing from the config are reported; original scene assignments are preserved.
+- Added Home Assistant template layouts, explicit sample data for sanitized services, local photo uploads, live radar tiles and locally generated news QR codes. Hardware helpers, HA entity connections, Pollen/BMW service backends and upstream animation engines are not executed.
+- Added optional loopback-only `serve.py` for public iCal feeds blocked by browser CORS. Feed URLs are never sent through public proxy services or written to request logs.
+- Added a synthetic scene example, browser regression tests, Python server checks and bundled dependency licenses. The supplied config/CSS and acceptance screenshots remain local.
+- Validation: 13 Chrome browser checks (including all 24 entries in the supplied sanitized config) and 3 Python checks passed. Live browser checks returned Open-Meteo current/hourly weather, radar imagery, a public calendar feed (HTTP 200) and a news article with a locally generated QR; no browser script errors.
+
+---
+
 ## 2026-11-15 — custom.css + repeated modules
 
 - Fixed: loading a `custom.css` with normal rules but none of the 19 known `--variables` failed with "No recognised CSS variables". Any valid file now loads

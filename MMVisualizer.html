@@ -505,6 +505,7 @@ label.ctl-label { font-size:12px; color:var(--text-dim); display:flex; align-ite
 ::-webkit-scrollbar-thumb { background:rgba(255,255,255,.1); border-radius:3px; }
 ::-webkit-scrollbar-thumb:hover { background:rgba(255,255,255,.2); }
 </style>
+<link rel="stylesheet" href="preview.css">
 </head>
 <body>
 
@@ -544,6 +545,15 @@ label.ctl-label { font-size:12px; color:var(--text-dim); display:flex; align-ite
   <span class="badge" id="badge" style="display:none"></span>
 </div>
 
+<div id="preview-controls">
+  <label class="ctl-label">Scene <select class="ctl" id="preview-scene" aria-label="Preview scene"></select></label>
+  <span id="preview-carousels"></span>
+  <label class="ctl-label"><input type="checkbox" id="preview-play"> Play rotation</label>
+  <label class="ctl-label"><input type="checkbox" id="preview-sample"> Sample data</label>
+  <label class="ctl-label"><input type="checkbox" id="preview-trigger"> Triggered panels</label>
+  <label class="ctl-label">Preview photos <input type="file" id="preview-photos" accept="image/*" multiple></label>
+  <span id="preview-notes" role="status"></span>
+</div>
 <!-- App -->
 <div id="app">
 
@@ -661,6 +671,9 @@ label.ctl-label { font-size:12px; color:var(--text-dim); display:flex; align-ite
 <!-- Drop overlay -->
 <div id="drop-overlay">Drop config.js to load</div>
 
+<script src="vendor/ical.js"></script>
+<script src="vendor/qrcode.js"></script>
+<script src="preview-runtime.js"></script>
 <script>
 // ══════════════════════════════════════════════════════════
 // State
@@ -810,13 +823,13 @@ async function openVisualConfigFile() {
 async function saveConfigFile() {
   const text = document.getElementById('cfg-area').value;
   if (!text) return;
-  if (await saveText(text, configFileHandle, 'Config.js')) clearDirty();
+  if (await saveText(text, configFileHandle, 'Config.js')) clearDirty('cfg');
 }
 
 async function saveVisualConfigFile() {
   const text = document.getElementById('vc-area').value;
   if (!text) return;
-  await saveText(text, visualConfigFileHandle, 'custom.css');
+  if (await saveText(text, visualConfigFileHandle, 'custom.css')) clearDirty('css');
 }
 
 async function saveText(text, handle, fallbackName) {
@@ -863,11 +876,16 @@ function showSaveBtn(which, show) {
 
 function loadVisualConfigText(text, name) {
   try {
+    const cleaned = MMV.cleanCSS(text);
+    text = cleaned.text;
     const vc = parseCustomCSS(text);
     applyVisualConfig(vc);
     setRawCustomCSS(text);
     document.getElementById('vc-area').value = text;
-    setStatus('custom.css loaded: ' + name + ' (' + Object.keys(vc).length + ' known variables, all rules applied to preview)', 'ok');
+    snapshot();
+    clearDirty('css');
+    if (cleaned.removed) markDirty('css');
+    setStatus('custom.css loaded: ' + name + ' (' + Object.keys(vc).length + ' known variables; preview styles applied)' + (cleaned.removed ? ' · repaired ' + cleaned.removed + ' unmatched closing brace(s)' : ''), 'ok');
   } catch(e) {
     setStatus('custom.css error: ' + e.message, 'err');
   }
@@ -900,9 +918,13 @@ function applyVCArea() {
   const t = document.getElementById('vc-area').value.trim();
   if (!t) return;
   try {
-    const vc = parseCustomCSS(t);
+    const cleaned = MMV.cleanCSS(t);
+    document.getElementById('vc-area').value = cleaned.text;
+    const vc = parseCustomCSS(cleaned.text);
     applyVisualConfig(vc);
-    setRawCustomCSS(t);
+    setRawCustomCSS(cleaned.text);
+    markDirty('css');
+    snapshot();
     setStatus('custom.css applied (' + Object.keys(vc).length + ' known variables, all rules applied to preview)', 'ok');
   } catch(e) { setStatus('custom.css error: ' + e.message, 'err'); }
 }
@@ -948,29 +970,7 @@ function parseCustomCSS(text) {
 
 // Scope the user's custom.css to the preview so .module / body / :root rules apply
 // to the mirror without restyling the editor UI itself.
-function scopeCustomCSS(text) {
-  text = text.replace(/\/\*[\s\S]*?\*\//g, '');
-  const hoisted = [];
-  text = text.replace(/@import[^;]+;/g, m => { hoisted.push(m); return ''; });
-  // @font-face / @keyframes cannot be nested, so lift them out (balanced braces)
-  const re = /@(?:font-face|(?:-webkit-)?keyframes)\b/g;
-  let out = '', last = 0, m;
-  while ((m = re.exec(text)) !== null) {
-    const open = text.indexOf('{', m.index);
-    if (open < 0) break;
-    let depth = 0, i = open;
-    for (; i < text.length; i++) {
-      if (text[i] === '{') depth++;
-      else if (text[i] === '}' && --depth === 0) break;
-    }
-    hoisted.push(text.slice(m.index, i + 1));
-    out += text.slice(last, m.index);
-    last = re.lastIndex = i + 1;
-  }
-  out += text.slice(last);
-  out = out.replace(/(^|[},;{\s])(:root|html|body)(?=[\s,{.:\[#>+~])/g, '$1&');
-  return hoisted.join('\n') + '\n#mirror {\n' + out + '\n}';
-}
+function scopeCustomCSS(text) { return MMV.scopeCSS(text); }
 
 function setRawCustomCSS(text) {
   let tag = document.getElementById('vc-raw');
@@ -1017,6 +1017,8 @@ function processText(text, src) {
   try {
     cfg = parseConfig(text);
     ensureIds(cfg);
+    previewWidths = {}; freePositions = {};
+    MMV.reset(cfg);
     document.getElementById('cfg-area').value = text;
     setStatus('Loaded: ' + src, 'ok');
     render();
@@ -1033,7 +1035,7 @@ function parseConfig(text) {
     .replace(/if\s*\(typeof\s+module[\s\S]*?;\s*$/m, '')
     .replace(/module\.exports\s*=\s*config\s*;?/g, '');
 
-  // Strategy 1: sandboxed eval (handles JS expressions like 10 * 60 * 1000)
+  // Evaluate trusted JS configs (preserves expressions and callback functions).
   try {
     const fn = new Function('module','exports','require','__dirname','__filename',
       clean + '\nreturn typeof config!=="undefined"?config:null;');
@@ -1075,6 +1077,7 @@ function parseConfig(text) {
 // ══════════════════════════════════════════════════════════
 function render() {
   if (!cfg) return;
+  MMV.onRender(cfg);
 
   // Stop old clock
   if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
@@ -1084,13 +1087,13 @@ function render() {
   const entries = (cfg.modules || []).map((m, i) => ({ m, i })).filter(e => showDis || !e.m.disabled);
   const modules = entries.map(e => e.m);
 
-  document.getElementById('empty').style.display = 'none';
+  document.getElementById('empty')?.remove();
 
   // Clear regions
   ALL_REGIONS.forEach(r => {
     const el = document.getElementById('region-' + r);
     if (!el) return;
-    [...el.children].forEach(c => { if (!c.classList.contains('rlabel')) c.remove(); });
+    [...el.children].forEach(c => { if (!c.classList.contains('rlabel') && !c.classList.contains('region')) c.remove(); });
     if (r.startsWith('fullscreen')) {
       el.parentElement.style.display = 'none';
     }
@@ -1146,6 +1149,7 @@ function buildWrap(mod, idx) {
   wrap.className = 'mm-wrap module ' + String(mod.module || '').replace(/[^\w-]/g, '') +
     (mod.classes ? ' ' + String(mod.classes).replace(/[^\w\s-]/g, '') : '') +
     (mod.disabled ? ' dis' : '') + (selIdx === idx ? ' sel' : '');
+  if (!MMV.isVisible(mod)) wrap.classList.add('mmv-hidden');
   wrap.dataset.idx = idx;
   wrap.style.position = 'relative';
   wrap.addEventListener('click', () => selectMod(idx));
@@ -1159,12 +1163,15 @@ function buildWrap(mod, idx) {
 
   if (mod.header) {
     const h = document.createElement('div');
-    h.className = 'mm-region-header';
+    h.className = 'mm-region-header module-header';
     h.textContent = mod.header;
     wrap.appendChild(h);
   }
 
-  wrap.appendChild(buildContent(mod, idx));
+  const content = document.createElement('div');
+  content.className = 'module-content';
+  content.appendChild(buildContent(mod, idx));
+  wrap.appendChild(content);
   enableModuleDrag(wrap, idx);
   addResizeHandles(wrap, mod);
 
@@ -1176,6 +1183,8 @@ function buildWrap(mod, idx) {
 }
 
 function buildContent(mod, idx) {
+  const supported = MMV.content(mod);
+  if (supported) return supported;
   const m = mod.module || '';
   switch (m) {
     case 'clock':           return buildClock(mod);
@@ -1200,7 +1209,7 @@ function buildClock(mod) {
   const showDate = c.showDate ?? c.displayDate ?? true;
   const div = document.createElement('div');
   div.className = 'mm-clock';
-  div.innerHTML = '<div class="time" id="clock-time"></div><div class="date" id="clock-date"></div>';
+  div.innerHTML = '<div class="time"></div><div class="date"></div>';
   div.dataset.fmt = fmt;
   div.dataset.showSecs = showSecs;
   div.dataset.showDate = showDate;
@@ -1211,10 +1220,9 @@ function startClock(modules) {
   const hasClock = modules.some(m => m.module === 'clock');
   if (!hasClock) return;
   function tick() {
-    const tEl = document.getElementById('clock-time');
-    const dEl = document.getElementById('clock-date');
-    if (!tEl || !dEl) return;
-    const clockDiv = tEl.closest('.mm-clock');
+    document.querySelectorAll('#mirror .mm-clock').forEach(clockDiv => {
+    const tEl = clockDiv.querySelector('.time');
+    const dEl = clockDiv.querySelector('.date');
     const now = new Date();
     const fmt = parseInt(clockDiv?.dataset.fmt || '24');
     const showSecs = clockDiv?.dataset.showSecs !== 'false';
@@ -1227,6 +1235,7 @@ function startClock(modules) {
     const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
     dEl.style.display = showDate ? '' : 'none';
     dEl.textContent = `${days[now.getDay()]}, ${months[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
+    });
   }
   tick();
   clockTimer = setInterval(tick, 1000);
@@ -1261,6 +1270,11 @@ function buildWeatherPlaceholder(mod, idx) {
 
 async function fetchWeather(mod, idx) {
   const c = mod.config || {};
+  if ((c.weatherProvider || '').toLowerCase().replace(/-/g, '') === 'openmeteo') {
+    const target = document.getElementById('weather-' + idx);
+    if (target) await MMV.renderOpenMeteo(target, mod);
+    return;
+  }
   const apiKey = c.apiKey || c.appid || '';
   const location = c.location || '';
   const type = c.type || 'current';
@@ -1395,6 +1409,7 @@ function renderWeatherData(el, { raw, type, units }) {
 }
 
 function refreshLive() {
+  MMV.refresh();
   Object.keys(weatherCache).forEach(k => delete weatherCache[k]);
   render();
 }
@@ -1928,6 +1943,7 @@ function setModuleWidth(mod, val) {
       el.style.minWidth = val || '';
     }
   });
+  snapshot();
 }
 
 function buildVCField(field) {
@@ -1993,21 +2009,24 @@ function buildVCField(field) {
 
 function updateVCField(key, value) {
   currentVC[key] = value;
+  markDirty('css');
 
   // Patch the vc-area text so the CSS file stays in sync
   const area = document.getElementById('vc-area');
   const cssVar = KEY_TO_CSS_VAR[key];
   if (area.value && cssVar) {
     // Replace:  --color-text: oldvalue;  →  --color-text: newvalue;
-    const escaped = value.replace(/[\\$]/g, '\\$&');
     const varEscaped = cssVar.replace(/[-]/g, '\\-');
     area.value = area.value.replace(
       new RegExp(`(${varEscaped}\\s*:\\s*)[^;\\n]+`),
-      `$1${escaped}`
+      (_, prefix) => prefix + value
     );
   }
 
+  if (cssVar && !new RegExp(cssVar + '\\s*:').test(area.value)) area.value += '\n:root { ' + cssVar + ': ' + value + '; }\n';
+  setRawCustomCSS(area.value);
   applyVisualConfig({ [key]: value });
+  snapshot();
 }
 
 function toHex(val) {
@@ -2167,47 +2186,9 @@ function setupMirrorDrop() {
 // Config serialization — write cfg object back to JS text
 // ══════════════════════════════════════════════════════════
 function serializeConfig(c) {
-  const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
-  const keyFmt = k => /^[A-Za-z_$][\w$]*$/.test(k) ? k : JSON.stringify(k);
-  const fmtVal = v => JSON.stringify(v);   // escapes quotes, backslashes, newlines
-  function fmtObj(obj, depth) {
-    const pad = '  '.repeat(depth);
-    const inner = Object.entries(obj).map(([k, v]) =>
-      `${pad}  ${keyFmt(k)}: ${isObj(v) ? fmtObj(v, depth + 1) : fmtVal(v)}`).join(',\n');
-    return `{\n${inner}\n${pad}}`;
-  }
-
-  // Preserve every top-level key, not just a fixed list
-  const TOP_FIRST = ['address','port','basePath','ipWhitelist','useHttps','language','locale','logLevel','timeFormat','units'];
-  const topKeys = [...TOP_FIRST.filter(k => c[k] !== undefined),
-                   ...Object.keys(c).filter(k => k !== 'modules' && !TOP_FIRST.includes(k))];
-  const top = ['let config = {'];
-  topKeys.forEach(k => top.push(`  ${keyFmt(k)}: ${isObj(c[k]) ? fmtObj(c[k], 1) : fmtVal(c[k])},`));
-
-  // Preserve every module key too (order, animateIn, etc.)
-  const MOD_FIRST = ['module','position','header','disabled','classes'];
-  top.push('', '  modules: [');
-  (c.modules || []).forEach((m, i) => {
-    const last = i === c.modules.length - 1;
-    const keys = [...MOD_FIRST.filter(k => m[k] !== undefined && m[k] !== false),
-                  ...Object.keys(m).filter(k => !MOD_FIRST.includes(k) && !k.startsWith('_mmv'))];
-    const lines = ['    {'];
-    keys.forEach(k => {
-      if (k === 'config' && !(m.config && Object.keys(m.config).length)) return;
-      const v = m[k];
-      const txt = isObj(v)
-        ? fmtObj(v, 3).split('\n').map((l, j) => j === 0 ? l : '      ' + l).join('\n')
-        : fmtVal(v);
-      lines.push(`      ${keyFmt(k)}: ${txt},`);
-    });
-    lines.push(`    }${last ? '' : ','}`);
-    top.push(lines.join('\n'));
-  });
-
-  top.push('  ],', '};', '',
-    '/*************** DO NOT EDIT THE LINE BELOW ***************/',
-    'if (typeof module !== "undefined") { module.exports = config; }');
-  return top.join('\n');
+  return 'let config = ' + MMV.stringify(c) + ';\n\n' +
+    '/*************** DO NOT EDIT THE LINE BELOW ***************/\n' +
+    'if (typeof module !== "undefined") { module.exports = config; }\n';
 }
 
 function updateConfigArea(noSnap) {
@@ -2225,17 +2206,23 @@ const BASE_TITLE = document.title;
 
 function snapshot() {
   if (!cfg) return;
-  const s = JSON.stringify({ cfg, free: freePositions });
+  const s = JSON.stringify({ config: serializeConfig(cfg), ids: (cfg.modules || []).map(m => m._mmvId), free: freePositions, widths: previewWidths, css: document.getElementById('vc-area').value });
   if (hist.stack[hist.pos] === s) return;
   hist.stack.length = hist.pos + 1;
   hist.stack.push(s);
   if (hist.stack.length > 100) hist.stack.shift();
   hist.pos = hist.stack.length - 1;
 }
-function resetHistory() { hist.stack = []; hist.pos = -1; snapshot(); clearDirty(); }
+function resetHistory() { hist.stack = []; hist.pos = -1; snapshot(); clearDirty('cfg'); }
 function restoreSnapshot(s) {
   const o = JSON.parse(s);
-  cfg = o.cfg; freePositions = o.free;
+  if (document.getElementById('vc-area').value !== o.css) markDirty('css');
+  cfg = parseConfig(o.config);
+  cfg.modules.forEach((m, i) => { m._mmvId = o.ids[i]; });
+  freePositions = o.free; previewWidths = o.widths;
+  MMV.state.config = cfg;
+  document.getElementById('vc-area').value = o.css;
+  setRawCustomCSS(o.css);
   ensureIds(cfg);
   updateConfigArea(true);
   render();
@@ -2250,8 +2237,9 @@ function redo() {
   if (hist.pos >= hist.stack.length - 1) { setStatus('Nothing to redo', ''); return; }
   restoreSnapshot(hist.stack[++hist.pos]); setStatus('Redo', 'ok');
 }
-function markDirty()  { dirty = true;  document.title = '• ' + BASE_TITLE; }
-function clearDirty() { dirty = false; document.title = BASE_TITLE; }
+let configDirty = false, cssDirty = false;
+function markDirty(which = 'cfg') { if (which === 'css') cssDirty = true; else configDirty = true; dirty = configDirty || cssDirty; document.title = '• ' + BASE_TITLE; }
+function clearDirty(which = 'all') { if (which === 'all' || which === 'cfg') configDirty = false; if (which === 'all' || which === 'css') cssDirty = false; dirty = configDirty || cssDirty; document.title = (dirty ? '• ' : '') + BASE_TITLE; }
 window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 
 // ══════════════════════════════════════════════════════════
@@ -2619,8 +2607,12 @@ function setStatus(msg, cls) {
 // ══════════════════════════════════════════════════════════
 // Init
 // ══════════════════════════════════════════════════════════
+MMV.initLayout();
 loadPrefs();
 applyRes();
+
+document.getElementById('cfg-area').addEventListener('input', () => markDirty());
+document.getElementById('vc-area').addEventListener('input', () => markDirty('css'));
 
 // Demo config so the mirror isn't blank
 processText(`var config = {

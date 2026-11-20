@@ -1,0 +1,21 @@
+let config={language:'en',locale:'en-US',timeFormat:12,units:'imperial',extra:false,modules:[
+ {module:'MMM-LogExt',config:{beforeContext:function(msg){return '['+msg.method+']'},afterContext:function(msg){return 'at ('+msg.location+')'}}},
+ {module:'clock',position:'top_bar',config:{displaySeconds:false}},
+ {module:'calendar',position:'top_bar',classes:'invisible',config:{calendars:[{name:'Home',url:'https://example.test/home.ics',color:'#4fd1c5'},{name:'School',url:'https://calendar.google.com/calendar/ical/basic.ics',color:'#ffcb50'}]}},
+ {module:'weather',position:'top_left',classes:'page1',config:{weatherProvider:'openmeteo',type:'current',lat:27.95,lon:-82.45,showHumidity:true}},
+ {module:'weather',position:'top_left',classes:'page2',config:{weatherProvider:'openmeteo',type:'hourly',lat:27.95,lon:-82.45,maxEntries:8}},
+ {module:'MMM-HomeAssistantDisplay',position:'top_left',config:{title:'Sensors',class:'porch',sections:[{displayTemplate:'Temp: {{ states("sensor.temperature") }}&deg;F',class:'temperature'}]}},
+ {module:'MMM-HomeAssistantDisplay',position:'top_bar',config:{title:'Mail',useModuleTigger:true,sections:[{displayTemplate:'{% if true %}MAIL HAS ARRIVED{% endif %}'}]}},
+ {module:'MMM-CalendarExt3',position:'lower_third',classes:'SceneFamily',header:'Family',config:{mode:'day',dayIndex:-1,calendarSet:['Home'],displayLegend:true,useWeather:true}},
+ {module:'MMM-CalendarExt3',position:'lower_third',classes:'SceneKid',header:'School',config:{mode:'week',weeksInView:1,firstDayOfWeek:1,calendarSet:['School']}},
+ {module:'MMM-CalendarExt3Agenda',position:'top_right',classes:'SceneFamily',config:{startDayIndex:0,endDayIndex:3,calendarSet:['Home']}},
+ {module:'MMM-Pollen',position:'top_left',config:{zip_code:'33601'}},
+ {module:'MMM-RAIN-MAP',position:'top_left',config:{mapPositions:[{lat:27.95,lng:-82.45,zoom:7}],mapWidth:'350px',mapHeight:'350px'}},
+ {module:'MMM-ImagesPhotos',position:'fullscreen_below',config:{updateInterval:100}},
+ {module:'newsfeed',position:'bottom_left',config:{feeds:[{title:'Demo News',url:'https://example.test/news.rss'}]}},
+ {module:'MMM-News-QR',position:'bottom_right',config:{imageSize:100}},
+ {module:'MMM-BMW-PW',position:'top_bar',config:{apiKey:''}},
+ {module:'MMM-GPIO-Notifications',config:{'24':{notifications_high:[{payload:{callback:(response)=>console.log(response.ok)}}]},'25':{notifications_high:[{payload:{callback:(response)=>console.log(response.ok)}}]}}},
+ {module:'MMM-Scenes2',config:{scenario:[{name:'Family',enter:['SceneFamily'],exit:['SceneKid'],next:'Kid',life:15000},{name:'Kid',enter:['SceneKid'],exit:['SceneFamily'],next:'Family',life:15000}]}},
+ {module:'MMM-Carousel',config:{mode:'positional',transitionInterval:15000,top_left:{enabled:true,ignoreModules:['MMM-HomeAssistantDisplay']}}}
+]};

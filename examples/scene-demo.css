@@ -1,0 +1,7 @@
+body{margin:10px;width:calc(100% - 30px);height:calc(100% - 20px)}
+.region.top.left{top:120%;min-width:calc(100%/3 - 30px)}
+.invisible{display:none}.clock .date{color:white}
+.CX3 .cell{background:rgb(12,34,56)}
+
+.MMM-CalendarExt3 .module-header{border-radius:20px}
+@media(min-width:10px){.CX3 .event{border-radius:8px}}

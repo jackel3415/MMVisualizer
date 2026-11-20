@@ -6,6 +6,10 @@ A browser-based visual editor and live preview tool for [MagicMirror²](https://
 
 ## Screenshots
 
+Scene/carousel example with explicit sample data (portrait preview):
+
+![Scene selection, weather carousel, shared calendar and agenda preview](docs/scene-preview.png)
+
 Sample data (made-up weather, calendar events and headlines), 1920×1080 preview.
 
 ![Overview — clock, weather, compliments, calendar and news laid out on the mirror](docs/overview.png)
@@ -21,7 +25,10 @@ Click any module to open its detail panel (Config and Visual tabs):
 - **Live mirror preview** — see your layout at real resolution (e.g. 1920×1080), scaled to fit your browser window
 - **Load your own `Config.js`** — import an existing MagicMirror config and see it rendered instantly
 - **Load `custom.css`** — load your MagicMirror style file directly to control colors, fonts, and spacing in the preview
-- **Live module rendering** — clock (with live tick), weather (current + 5-day via OpenWeatherMap), MMM-CalendarExt3 week grid, compliments, newsfeed
+- **Weather** — Open-Meteo current, hourly and daily forecasts without an API key, plus OpenWeatherMap current and daily previews
+- **Calendars** — CalendarExt3 day/week/month and CalendarExt3Agenda, using named feeds from the built-in `calendar` module, including recurrence and feed-provided timezones
+- **Scenes and rotation** — choose a Scenes2 scene and a Carousel panel, play/pause rotation, or show all modules while editing
+- **Module previews** — Home Assistant templates, pollen, BMW-PW, local photos, radar and news QR, with clearly labelled sample data where live services are unavailable
 - **Drag & drop between regions** — move modules between any of the 13 MagicMirror positions by dragging
 - **Free positioning** — toggle "Free Position" on any module to place it anywhere on the mirror with pixel precision; exports the CSS override needed for the Pi
 - **Resize handles** — drag the right edge, bottom edge, or corner of any module to resize it visually
@@ -42,13 +49,13 @@ Click any module to open its detail panel (Config and Visual tabs):
 1. **Clone or download this repository**
 
    ```bash
-   git clone https://github.com/YOUR_USERNAME/MMVisualizer.git
+   git clone --branch qol-updates https://github.com/jackel3415/MMVisualizer.git
    cd MMVisualizer
    ```
 
 2. **Open `MMVisualizer.html` in your browser**
 
-   No build step or server required — it's a single HTML file.
+   No build step is required. Keep `preview-runtime.js`, `preview.css` and `vendor/` alongside the HTML file when downloading or copying it.
 
    > Chrome or Edge is recommended for full File System Access API support (save-to-file).  
    > Firefox works but will use download-only mode for saving.
@@ -60,12 +67,17 @@ Click any module to open its detail panel (Config and Visual tabs):
 
    If you don't have existing files, the visualizer loads with a built-in default config.
 
+   For a scene-based example, load `examples/scene-demo.js` and `examples/scene-demo.css`, then enable **Sample data**. Select portrait resolution if the layout was designed for a portrait screen.
+
 4. **Edit and preview**
 
    - Drag modules between regions
    - Click a module to edit its config and visual settings
    - Resize modules with the drag handles that appear on hover
    - Browse community modules via the **Browse** tab
+   - Use **Scene** and the position dropdowns to inspect a scene or carousel panel; **Play rotation** uses the configured intervals
+   - Enable **Sample data** for sanitized calendar feeds and service values; sample data never changes your exported config
+   - Select **Preview photos** to load local images, or **Triggered panels** to inspect conditional Home Assistant displays
 
 5. **Save your changes**
 
@@ -78,7 +90,11 @@ Click any module to open its detail panel (Config and Visual tabs):
 
 | File | Purpose |
 |---|---|
-| `MMVisualizer.html` | The entire application — open this in your browser |
+| `MMVisualizer.html` | Application entry point — open this in your browser |
+| `preview-runtime.js`, `preview.css` | Module previews, scene selection, native region geometry and stylesheet scoping |
+| `vendor/` | Bundled iCalendar parser and QR encoder, with licenses; no CDN is required |
+| `serve.py` | Optional local server for public calendar feeds that block browser CORS |
+| `examples/scene-demo.*` | Made-up scene/carousel example, suitable for sample-data mode |
 | `Config.sample.js` | Example MagicMirror config with placeholder values — copy to `Config.js` and fill in your own |
 | `custom.css` | Visual style settings (colors, fonts, spacing) — mirrors the file MagicMirror reads on the Pi |
 | `LICENSE` | MIT License |
@@ -106,6 +122,8 @@ Then edit `Config.js`:
 ## custom.css Reference
 
 `custom.css` is the same file MagicMirror reads on the Pi. Load it into the visualizer to preview your styles, edit via the Visual tab, and save it back — no extra conversion step needed.
+
+Ordinary selectors work even without any known CSS variables. `body` rules target the preview body, `.region.top.left` and `.module-header` match the native-style preview markup, and rules are scoped individually so a malformed brace cannot expose the editor UI to later selectors. Unmatched closing braces are repaired on import and reported in the status line. Keep your original file when reviewing a repair. `@font-face` is supported; external `@import` rules are skipped.
 
 | CSS Variable | Default | Description |
 |---|---|---|
@@ -171,7 +189,48 @@ Example output:
 
 ---
 
-## Module Browser
+## Data sources and preview limits
+
+This is a layout editor with module-specific renderers. It does not load community modules or execute their Node helpers, GPIO commands, Home Assistant Jinja templates, or scene callbacks.
+
+| Module / feature | Preview behavior |
+|---|---|
+| Open-Meteo weather | Live current, hourly and daily weather using `lat`/`lon`; labelled deterministic data when Sample data is enabled |
+| CalendarExt3 / Agenda | Shared `calendarSet` feeds, date ranges, legend, all-day/multiday events, recurring events, recurrence exceptions and embedded VTIMEZONE definitions; layout approximation rather than the full upstream engine |
+| Scenes2 | String/object roles, inherited role visibility, configured intervals and static `next` targets; animations and function-valued transition targets are not executed |
+| Carousel | Positional/global/slides modes, ignored modules, manual selection and interval rotation |
+| HomeAssistantDisplay | Template structure with absent values or labelled sample sensor readings; Triggered panels controls conditional displays. Tokens are not transmitted and live HA entities are not connected |
+| ImagesPhotos | Images selected from this browser; multiple selected photos rotate when Play rotation is enabled. A Pi's filesystem and EXIF labels are not available |
+| Pollen / BMW-PW | Labelled sample panels for layout; their external service backends are not connected |
+| RAIN-MAP | Latest live RainViewer overlay on OpenStreetMap tiles, or a labelled sample map; the upstream timeline/animation is not reproduced |
+| News-QR | Locally generated QR code for the currently previewed news article |
+| LogExt / GPIO / screen power | Config is preserved; hardware commands and callbacks are never triggered by the preview |
+
+Sanitized Google URLs such as `https://calendar.google.com/calendar/ical/basic.ics` cannot return private events. Use **Sample data** to inspect their layout. For real public iCalendar feeds that block direct browser access, run:
+
+```bash
+python serve.py
+```
+
+Open `http://127.0.0.1:8765/MMVisualizer.html`. This optional standard-library server fetches public HTTP(S) feeds directly on your computer, never through a public CORS proxy, and does not log feed query strings. It binds only to loopback and rejects private network destinations. API feeds and modules still need their actual service configuration on the Pi.
+
+If a scene refers to a class absent from the config (for example, `SceneWeather`), the preview reports it. It does not silently add classes to your exported config.
+
+Config functions are preserved as JavaScript through drag, delete, undo/redo and export. As with MagicMirror itself, only import configs you trust: JavaScript expressions are evaluated when loading. Comments and original expression formatting are not retained when visual edits regenerate the config.
+
+### Tests
+
+With Chrome installed:
+
+```bash
+npm install
+npm test
+python -m unittest discover -s tests -p test_server.py
+```
+
+The browser regression suite uses mocked services. Set `CHROME_PATH` if Chrome is installed in a nonstandard location. Optional environment variables `MMV_CONFIG` and `MMV_CSS` add a local acceptance test for a private sanitized package; those files and resulting screenshots are not committed.
+
+### Browse community modules
 
 The **Browse** tab searches GitHub for community MagicMirror modules tagged with `magicmirror-module`. You can:
 

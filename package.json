@@ -1,0 +1,6 @@
+{
+  "name": "mmvisualizer",
+  "private": true,
+  "scripts": { "test": "node --test tests/preview.cjs" },
+  "devDependencies": { "playwright-core": "^1.62.0" }
+}

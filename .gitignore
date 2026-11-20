@@ -13,3 +13,8 @@ MagicMirror-master/
 .DS_Store
 Thumbs.db
 *.swp
+
+# Local tests and private acceptance inputs
+node_modules/
+test-output/
+__pycache__/
