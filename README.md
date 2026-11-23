@@ -49,7 +49,7 @@ Click any module to open its detail panel (Config and Visual tabs):
 1. **Clone or download this repository**
 
    ```bash
-   git clone --branch qol-updates https://github.com/jackel3415/MMVisualizer.git
+   git clone https://github.com/jackel3415/MMVisualizer.git
    cd MMVisualizer
    ```
 
